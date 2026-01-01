@@ -8,7 +8,7 @@
 </div>
 
 <div class="row">
-    <!-- 左侧：基础参数 -->
+    <!-- 左侧：参数配置 -->
     <div class="col-lg-4 mb-4">
         <div class="card shadow-sm border-0 h-100">
             <div class="card-header bg-white fw-bold py-3">交互参数</div>
@@ -56,7 +56,7 @@
                     <select id="push_channel_id" class="form-select">
                         <option value="">-- 不推送 --</option>
                         {% for c in channels %}
-                        <!-- ⚠️ 关键：确保这里比较的是字符串 -->
+                        <!-- ⚠️ 关键：确保转换为字符串比较，防止 ID 类型不匹配导致回显失败 -->
                         <option value="{{ c.chat_id }}" {{ 'selected' if str(c.chat_id) == str(conf.push_channel_id) }}>{{ c.title }}</option>
                         {% endfor %}
                     </select>
@@ -83,27 +83,34 @@
                 </select>
             </div>
             <div class="card-body d-flex flex-column p-0">
+                <!-- 工具栏 -->
                 <div class="p-2 bg-light border-bottom d-flex flex-wrap gap-2 align-items-center">
                     <div class="btn-group bg-white border rounded shadow-sm">
                         <button class="btn btn-sm btn-light" onclick="cmd('bold')" title="加粗"><i class="fa-solid fa-bold"></i></button>
                         <button class="btn btn-sm btn-light" onclick="cmd('italic')" title="斜体"><i class="fa-solid fa-italic"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="link()" title="链接"><i class="fa-solid fa-link"></i></button>
+                        <button class="btn btn-sm btn-light" onclick="link()" title="插入链接"><i class="fa-solid fa-link"></i></button>
                     </div>
                     <div class="vr mx-1"></div>
                     <span class="badge bg-white text-dark border cursor-pointer" onclick="insert('{onlineEmoji}')">🟢表情</span>
                     {% for f in fields %}
                     <span class="badge bg-white text-primary border cursor-pointer" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>
                     {% endfor %}
-                    <span class="badge bg-warning text-dark border cursor-pointer" onclick="insert('{tg_id}')" title="仅推送模板可用">TG_ID</span>
+                    <span class="badge bg-warning text-dark border cursor-pointer" onclick="insert('{tg_id}')" title="TG用户ID">TG_ID</span>
                 </div>
+                
+                <!-- 编辑区 -->
                 <div id="editor" class="p-3 flex-grow-1" contenteditable="true" style="outline:none; min-height: 300px; font-size: 15px; line-height: 1.6;"></div>
-                <div class="p-2 border-top bg-light text-end"><button class="btn btn-sm btn-secondary" onclick="saveTmp()">暂存当前文案</button></div>
+                
+                <div class="p-2 border-top bg-light text-end">
+                    <button class="btn btn-sm btn-secondary" onclick="saveTmp()">暂存当前文案</button>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <script>
+    // 初始化消息数据
     let msgs = {
         template: `{{ conf.template|safe }}`,
         push_template: `{{ conf.push_template|safe }}`,
@@ -113,23 +120,33 @@
         msg_query_header: `{{ conf.msg_query_header|safe }}`
     };
     
+    // ⚠️ 关键：明确当前群组ID，防止保存时 Session 丢失
+    const currentGroupId = {{ group.id }};
+
     document.addEventListener('DOMContentLoaded', () => loadMsg());
-    function loadMsg() { document.getElementById('editor').innerHTML = msgs[document.getElementById('msgSelector').value] || ''; }
+
+    function loadMsg() { 
+        document.getElementById('editor').innerHTML = msgs[document.getElementById('msgSelector').value] || ''; 
+    }
+    
     function saveTmp() { 
         msgs[document.getElementById('msgSelector').value] = document.getElementById('editor').innerHTML; 
+        // 简单反馈
         const btn = document.querySelector('.btn-secondary');
         const org = btn.innerHTML;
         btn.innerHTML = '已暂存';
-        setTimeout(() => btn.innerHTML = org, 800);
+        setTimeout(() => btn.innerHTML = org, 500);
     }
+    
     function cmd(c,v){ document.getElementById('editor').focus(); document.execCommand(c,false,v); }
     function insert(t){ cmd('insertText', t); }
     function link(){ let u=prompt('URL:'); if(u) cmd('createLink',u); }
     
     function saveSettings() {
-        saveTmp(); 
+        saveTmp(); // 先保存编辑器里的内容
+        
         const d = {
-            group_id: {{ group.id }}, // ⚠️ 关键：必须传群ID
+            group_id: currentGroupId, // ⚠️ 必须包含 ID
             config: {
                 ...msgs,
                 checkin_open: document.getElementById('checkin_open').checked,
@@ -140,11 +157,15 @@
                 auto_like: document.getElementById('auto_like').checked,
                 like_emoji: document.getElementById('like_emoji').value,
                 push_channel_id: document.getElementById('push_channel_id').value,
-                online_emoji: "{{ conf.online_emoji }}", offline_emoji: "{{ conf.offline_emoji }}"
+                online_emoji: "{{ conf.online_emoji }}", 
+                offline_emoji: "{{ conf.offline_emoji }}"
             }
         };
+        
         fetch('/core/api/save_settings', {
-            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)
+            method:'POST', 
+            headers:{'Content-Type':'application/json'}, 
+            body:JSON.stringify(d)
         }).then(()=>alert('✅ 配置已保存'));
     }
 </script>
