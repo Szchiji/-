@@ -8,7 +8,7 @@
 </div>
 
 <div class="row">
-    <!-- 左侧：参数配置 -->
+    <!-- 左侧：基础参数 -->
     <div class="col-lg-4 mb-4">
         <div class="card shadow-sm border-0 h-100">
             <div class="card-header bg-white fw-bold py-3">交互参数</div>
@@ -56,7 +56,7 @@
                     <select id="push_channel_id" class="form-select">
                         <option value="">-- 不推送 --</option>
                         {% for c in channels %}
-                        <!-- ⚠️ 关键：确保转换为字符串比较，防止 ID 类型不匹配导致回显失败 -->
+                        <!-- ⚠️ 关键：确保这里比较的是字符串 -->
                         <option value="{{ c.chat_id }}" {{ 'selected' if str(c.chat_id) == str(conf.push_channel_id) }}>{{ c.title }}</option>
                         {% endfor %}
                     </select>
