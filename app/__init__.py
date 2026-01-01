@@ -3,6 +3,8 @@ from flask_sqlalchemy import SQLAlchemy
 import os
 
 db = SQLAlchemy()
+
+# 全局变量用于跨文件调用
 global_bot = None
 global_loop = None
 
@@ -15,7 +17,7 @@ def create_app():
         
     app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'secret')
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'secret_key_123')
     
     db.init_app(app)
     
