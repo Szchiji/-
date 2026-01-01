@@ -1,4 +1,3 @@
-
 from . import db
 from datetime import datetime
 import json
