@@ -1,64 +1,58 @@
 from . import db
 from datetime import datetime
+import json
 
+# 全局配置 (保留用于字段定义等不随群变化的配置)
 class Config(db.Model):
-    """通用配置表"""
     key = db.Column(db.String(50), primary_key=True)
     value = db.Column(db.Text)
 
 class User(db.Model):
-    """用户表"""
-    __tablename__ = 'users_v1'
+    __tablename__ = 'users_v2' # 升级版本号
     id = db.Column(db.Integer, primary_key=True)
     tg_id = db.Column(db.BigInteger, unique=True, index=True)
     profile_data = db.Column(db.Text, default='{}') 
-    expiration_date = db.Column(db.DateTime)
-    points = db.Column(db.Integer, default=0)
     checkin_time = db.Column(db.DateTime)
     online = db.Column(db.Boolean, default=False)
-    
-    @property
-    def is_expired(self):
-        return self.expiration_date and datetime.now() > self.expiration_date
+    # 记录用户最后一次在哪个群打卡 (可选)
+    last_chat_id = db.Column(db.BigInteger)
 
 class Chat(db.Model):
-    """🆕 新增：聊天会话表 (用于存储发现的群和频道)"""
-    __tablename__ = 'chats'
-    id = db.Column(db.BigInteger, primary_key=True) # Telegram Chat ID
-    title = db.Column(db.String(255))               # 群名/频道名
-    type = db.Column(db.String(50))                 # group, supergroup, channel
+    __tablename__ = 'chats_v2' # 升级版本号
+    id = db.Column(db.BigInteger, primary_key=True) # Chat ID
+    title = db.Column(db.String(255))
+    type = db.Column(db.String(50)) # group/supergroup/channel
+    
+    # 🌟 核心：每个群独立的配置 (JSON格式存储)
+    # 包含：checkin_open, checkin_cmd, auto_like, msg_xxx 等所有配置
+    settings = db.Column(db.Text, default='{}')
 
-# --- 默认配置 ---
+    def get_setting(self, key, default=None):
+        try:
+            s = json.loads(self.settings or '{}')
+            return s.get(key, default)
+        except:
+            return default
+
+# 默认字段配置 (全局共用)
 DEFAULT_FIELDS = [
     {"key": "name", "label": "昵称", "type": "text"},
-    {"key": "region", "label": "地区", "type": "select", "options": ["区域A","区域B"]},
-    {"key": "price", "label": "等级", "type": "text"},
+    {"key": "region", "label": "地区", "type": "select", "options": ["福田","南山"]},
+    {"key": "level", "label": "等级", "type": "text"},
 ]
 
-DEFAULT_SYSTEM = {
-    # --- 打卡配置 ---
+# 默认群组配置模板
+DEFAULT_CHAT_SETTINGS = {
     "checkin_open": True,
-    "checkin_chat_id": "",       # 🆕 绑定的打卡群ID
     "checkin_cmd": "打卡",
-    "online_emoji": "🟢",
-    "offline_emoji": "🔴",
+    "query_cmd": "查询",
     "auto_like": True,
     "like_emoji": "❤️",
-    "checkin_del_time": 30,
-    
-    # 消息提示
-    "msg_checkin_success": "✅ <b>打卡成功！</b>",
-    "msg_not_registered": "⚠️ <b>未认证用户无法操作</b>",
-    "msg_repeat_checkin": "🔄 <b>今天已打卡</b>",
-    "msg_checkin_cancel": "🛑 <b>状态已重置</b>",
-    
-    # --- 查询配置 ---
-    "query_open": True,
-    "query_cmd": "查询",
-    "query_del_time": 30,
-    "msg_query_header": "🔍 <b>今日在线：</b>\n",
-    "template": "<b>{onlineEmoji} {昵称}</b> | {地区}",
-    "page_size": 10,
-    "online_delay": 0,
-    "push_channel_id": ""        # 绑定的推送频道ID
+    "del_time": 30,
+    "online_emoji": "🟢",
+    "msg_success": "✅ <b>打卡成功</b>",
+    "msg_repeat": "🔄 <b>今日已打卡</b>",
+    "msg_fail": "⚠️ <b>未认证</b>",
+    "msg_query_head": "🔍 <b>今日在线：</b>\n",
+    "user_template": "{onlineEmoji} {昵称Value} | {地区Value}"
 }
