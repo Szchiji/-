@@ -21,7 +21,6 @@ if __name__ == '__main__':
     with app.app_context():
         # ⚠️⚠️⚠️ 之前让你加的 drop_all 必须注释掉或删除！
         # db.drop_all()  <-- 删掉这一行！！！
-        db.create_all()
         print("✅ 数据库已就绪", flush=True)
     
     flask_thread = threading.Thread(target=run_flask, daemon=True)
