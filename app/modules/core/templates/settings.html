@@ -8,12 +8,12 @@
 </div>
 
 <div class="row">
-    <!-- Left: Parameters -->
+    <!-- 左侧：参数 -->
     <div class="col-lg-4 mb-4">
         <div class="card shadow-sm border-0 h-100">
             <div class="card-header bg-white fw-bold py-3">交互参数</div>
             <div class="card-body">
-                <!-- Check-in -->
+                <!-- 打卡 -->
                 <div class="form-check form-switch mb-2">
                     <input class="form-check-input" type="checkbox" id="checkin_open" {{ 'checked' if conf.checkin_open }}>
                     <label class="fw-bold">开启打卡</label>
@@ -23,7 +23,7 @@
                     <input id="checkin_cmd" class="form-control" value="{{ conf.checkin_cmd }}" placeholder="打卡, 上班, sign">
                 </div>
                 
-                <!-- Query -->
+                <!-- 查询 -->
                 <div class="form-check form-switch mb-2">
                     <input class="form-check-input" type="checkbox" id="query_open" {{ 'checked' if conf.query_open }}>
                     <label class="fw-bold">开启查询</label>
@@ -31,7 +31,7 @@
                 <div class="mb-3">
                     <label class="small text-muted">查询指令 (逗号分隔)</label>
                     <input id="query_cmd" class="form-control" value="{{ conf.query_cmd }}" placeholder="查询, list">
-                    <div class="form-text small" style="font-size:11px">支持筛选: "查询 福田"</div>
+                    <div class="form-text small" style="font-size:11px">支持高级查询: "查询 福田"</div>
                 </div>
 
                 <div class="mb-3">
@@ -41,7 +41,6 @@
 
                 <hr>
                 
-                <!-- Interaction -->
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <label class="small text-muted">自动点赞</label>
                     <div class="form-check form-switch m-0">
@@ -50,24 +49,17 @@
                 </div>
                 <input id="like_emoji" class="form-control mb-3" value="{{ conf.like_emoji }}" placeholder="❤️">
 
-                <!-- Push Channel -->
+                <!-- ⚠️ 关键修复：改为手动输入框 -->
                 <div class="mb-3">
-                    <label class="small text-muted fw-bold text-success">绑定推送频道</label>
-                    <select id="push_channel_id" class="form-select">
-                        <option value="">-- 不推送 --</option>
-                        {% for c in channels %}
-                        <option value="{{ c.chat_id }}" {{ 'selected' if str(c.chat_id) == str(conf.push_channel_id) }}>{{ c.title }}</option>
-                        {% endfor %}
-                    </select>
-                    {% if not channels %}
-                    <div class="form-text text-danger small">暂无频道数据。请将机器人拉入频道并设为管理员。</div>
-                    {% endif %}
+                    <label class="small text-muted fw-bold text-success">推送频道 ID</label>
+                    <input id="push_channel_id" class="form-control" value="{{ conf.push_channel_id or '' }}" placeholder="-100xxxxxxx">
+                    <div class="form-text small">请输入频道的 Chat ID (通常以 -100 开头)</div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Right: Editor -->
+    <!-- 右侧：编辑器 (保持不变，请复用之前的 HTML) -->
     <div class="col-lg-8 mb-4">
         <div class="card shadow-sm border-0 h-100">
             <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
@@ -82,23 +74,19 @@
                 </select>
             </div>
             <div class="card-body d-flex flex-column p-0">
-                <!-- Toolbar -->
                 <div class="p-2 bg-light border-bottom d-flex flex-wrap gap-2 align-items-center">
                     <div class="btn-group bg-white border rounded shadow-sm">
-                        <button class="btn btn-sm btn-light" onclick="cmd('bold')" title="加粗"><i class="fa-solid fa-bold"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="cmd('italic')" title="斜体"><i class="fa-solid fa-italic"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="link()" title="链接"><i class="fa-solid fa-link"></i></button>
+                        <button class="btn btn-sm btn-light" onclick="cmd('bold')"><b>B</b></button>
+                        <button class="btn btn-sm btn-light" onclick="link()">🔗</button>
                     </div>
                     <div class="vr mx-1"></div>
                     <span class="badge bg-white text-dark border cursor-pointer" onclick="insert('{onlineEmoji}')">🟢表情</span>
                     {% for f in fields %}
                     <span class="badge bg-white text-primary border cursor-pointer" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>
                     {% endfor %}
-                    <span class="badge bg-warning text-dark border cursor-pointer" onclick="insert('{tg_id}')" title="仅推送模板可用">TG_ID</span>
+                    <span class="badge bg-warning text-dark border cursor-pointer" onclick="insert('{tg_id}')">TG_ID</span>
                 </div>
-                <!-- Editor Area -->
-                <div id="editor" class="p-3 flex-grow-1" contenteditable="true" style="outline:none; min-height: 300px; font-size: 15px; line-height: 1.6;"></div>
-                
+                <div id="editor" class="p-3 flex-grow-1" contenteditable="true" style="outline:none; min-height: 300px;"></div>
                 <div class="p-2 border-top bg-light text-end">
                     <button class="btn btn-sm btn-secondary" onclick="saveTmp()">暂存当前文案</button>
                 </div>
@@ -117,15 +105,10 @@
         msg_query_header: `{{ conf.msg_query_header|safe }}`
     };
     
-    // Explicitly inject current group ID to prevent saving to wrong group
     const currentGroupId = {{ group.id }};
 
     document.addEventListener('DOMContentLoaded', () => loadMsg());
-
-    function loadMsg() { 
-        document.getElementById('editor').innerHTML = msgs[document.getElementById('msgSelector').value] || ''; 
-    }
-    
+    function loadMsg() { document.getElementById('editor').innerHTML = msgs[document.getElementById('msgSelector').value] || ''; }
     function saveTmp() { 
         msgs[document.getElementById('msgSelector').value] = document.getElementById('editor').innerHTML; 
         const btn = document.querySelector('.btn-secondary');
@@ -133,16 +116,14 @@
         btn.innerHTML = '已暂存';
         setTimeout(() => btn.innerHTML = org, 500);
     }
-    
     function cmd(c,v){ document.getElementById('editor').focus(); document.execCommand(c,false,v); }
     function insert(t){ cmd('insertText', t); }
     function link(){ let u=prompt('URL:'); if(u) cmd('createLink',u); }
     
     function saveSettings() {
-        saveTmp(); // Save current editor content to js object
-        
+        saveTmp(); 
         const d = {
-            group_id: currentGroupId, // CRITICAL: Pass group_id
+            group_id: currentGroupId,
             config: {
                 ...msgs,
                 checkin_open: document.getElementById('checkin_open').checked,
@@ -152,16 +133,13 @@
                 checkin_del_time: document.getElementById('checkin_del_time').value,
                 auto_like: document.getElementById('auto_like').checked,
                 like_emoji: document.getElementById('like_emoji').value,
-                push_channel_id: document.getElementById('push_channel_id').value,
+                push_channel_id: document.getElementById('push_channel_id').value, // ⚠️ 获取手动输入的值
                 online_emoji: "{{ conf.online_emoji }}", 
                 offline_emoji: "{{ conf.offline_emoji }}"
             }
         };
-        
         fetch('/core/api/save_settings', {
-            method:'POST', 
-            headers:{'Content-Type':'application/json'}, 
-            body:JSON.stringify(d)
+            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)
         }).then(()=>alert('✅ 配置已保存'));
     }
 </script>
