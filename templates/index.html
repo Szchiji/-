@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head><title>Bot 管理后台</title></head>
+<body>
+    <h1>用户列表</h1>
+    <table border="1">
+        <tr>
+            <th>ID</th><th>用户名</th><th>积分</th><th>状态</th><th>最后打卡</th>
+        </tr>
+        {% for user in users %}
+        <tr>
+            <td>{{ user.telegram_id }}</td>
+            <td>{{ user.username }}</td>
+            <td>{{ user.points }}</td>
+            <td>{{ '🟢 在线' if user.is_online else '🔴 离线' }}</td>
+            <td>{{ user.last_checkin }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>添加自动回复</h2>
+    <form action="/add_reply" method="post">
+        关键词: <input type="text" name="keyword">
+        回复内容: <input type="text" name="content">
+        <button type="submit">添加</button>
+    </form>
+</body>
+</html>
