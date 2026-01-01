@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+    .btn-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+    .btn-row .form-control { flex: 1; }
+    #editor { white-space: pre-wrap; word-break: break-word; }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4 class="fw-bold m-0"><i class="fa-solid fa-sliders me-2"></i>功能配置 ({{ group.title }})</h4>
     <button class="btn btn-primary fw-bold px-4" onclick="saveSettings()">
@@ -13,56 +19,64 @@
         <div class="card shadow-sm border-0 h-100">
             <div class="card-header bg-white fw-bold py-3">交互参数</div>
             <div class="card-body">
-                <div class="form-check form-switch mb-2">
-                    <input class="form-check-input" type="checkbox" id="checkin_open" {{ 'checked' if conf.checkin_open }}>
-                    <label class="fw-bold">开启打卡</label>
-                </div>
-                <div class="mb-3">
-                    <label class="small text-muted">打卡指令 (逗号分隔)</label>
-                    <input id="checkin_cmd" class="form-control form-control-sm" value="{{ conf.checkin_cmd }}" placeholder="打卡, 上班">
-                </div>
-                
-                <hr>
-
-                <div class="form-check form-switch mb-2">
-                    <input class="form-check-input" type="checkbox" id="query_open" {{ 'checked' if conf.query_open }}>
-                    <label class="fw-bold">开启普通查询</label>
-                </div>
-                <div class="mb-3">
-                    <label class="small text-muted">普通查询指令</label>
-                    <input id="query_cmd" class="form-control form-control-sm" value="{{ conf.query_cmd }}" placeholder="查询">
-                </div>
-
-                <div class="form-check form-switch mb-2">
-                    <input class="form-check-input" type="checkbox" id="query_filter_open" {{ 'checked' if conf.query_filter_open }}>
-                    <label class="fw-bold">开启关键词筛选</label>
-                </div>
-                
-                <hr>
-
-                <div class="row g-2 mb-3">
-                    <div class="col-6">
-                        <label class="small text-muted">打卡删除(秒)</label>
+                <div class="p-3 bg-light rounded mb-3">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="checkin_open" {{ 'checked' if conf.checkin_open }}>
+                        <label class="fw-bold">开启打卡</label>
+                    </div>
+                    <div class="mb-2">
+                        <label class="small text-muted">打卡指令</label>
+                        <input id="checkin_cmd" class="form-control form-control-sm" value="{{ conf.checkin_cmd }}" placeholder="打卡">
+                    </div>
+                    <div class="mb-0">
+                        <label class="small text-muted">自动删除 (秒)</label>
                         <input type="number" id="checkin_del_time" class="form-control form-control-sm" value="{{ conf.checkin_del_time }}">
                     </div>
-                    <div class="col-6">
-                        <label class="small text-muted">查询删除(秒)</label>
-                        <input type="number" id="query_del_time" class="form-control form-control-sm" value="{{ conf.query_del_time }}">
-                    </div>
                 </div>
                 
-                <div class="mb-3">
-                    <label class="small text-muted">每页显示数量</label>
-                    <input type="number" id="page_size" class="form-control form-control-sm" value="{{ conf.page_size }}">
-                </div>
+                <div class="p-3 bg-light rounded mb-3">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="query_open" {{ 'checked' if conf.query_open }}>
+                        <label class="fw-bold">开启普通查询</label>
+                    </div>
+                    <div class="mb-2">
+                        <label class="small text-muted">普通查询指令</label>
+                        <input id="query_cmd" class="form-control form-control-sm" value="{{ conf.query_cmd }}" placeholder="查询">
+                    </div>
 
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <label class="small text-muted">自动点赞</label>
-                    <div class="form-check form-switch m-0">
-                        <input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if conf.auto_like }}>
+                    <hr class="my-2">
+
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="query_filter_open" {{ 'checked' if conf.query_filter_open }}>
+                        <label class="fw-bold">开启关键词筛选</label>
+                    </div>
+                    
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="small text-muted">每页行数</label>
+                            <input type="number" id="page_size" class="form-control form-control-sm" value="{{ conf.page_size }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="small text-muted">删除时间(秒)</label>
+                            <input type="number" id="query_del_time" class="form-control form-control-sm" value="{{ conf.query_del_time }}">
+                        </div>
                     </div>
                 </div>
-                <input id="like_emoji" class="form-control mb-3 form-control-sm" value="{{ conf.like_emoji }}" placeholder="❤️">
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label class="small text-muted">自动点赞 (强制)</label>
+                        <div class="form-check form-switch m-0">
+                            <input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if conf.auto_like }}>
+                        </div>
+                    </div>
+                    <input id="like_emoji" class="form-control form-control-sm" value="{{ conf.like_emoji }}" placeholder="❤️">
+                </div>
+
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="auto_mute_expired" {{ 'checked' if conf.auto_mute_expired }}>
+                    <label class="fw-bold text-danger">过期自动禁言</label>
+                </div>
 
                 <div class="mb-3">
                     <label class="small text-muted fw-bold text-success">推送频道 ID</label>
@@ -89,15 +103,16 @@
                 </select>
             </div>
             <div class="card-body d-flex flex-column p-0">
-                <!-- 工具栏 -->
                 <div class="p-2 bg-light border-bottom d-flex flex-wrap gap-2 align-items-center">
                     <div class="btn-group bg-white border rounded shadow-sm">
-                        <button class="btn btn-sm btn-light" onclick="cmd('bold')" title="加粗"><i class="fa-solid fa-bold"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="link()" title="链接"><i class="fa-solid fa-link"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="cmd('removeFormat')" title="清除格式"><i class="fa-solid fa-eraser"></i></button>
+                        <button class="btn btn-sm btn-light" onclick="exec('bold')" title="加粗"><i class="fa-solid fa-bold"></i></button>
+                        <button class="btn btn-sm btn-light" onclick="exec('italic')" title="斜体"><i class="fa-solid fa-italic"></i></button>
+                        <button class="btn btn-sm btn-light" onclick="addLink()" title="添加链接"><i class="fa-solid fa-link"></i></button>
+                        <!-- 🆕 新增：断开链接 -->
+                        <button class="btn btn-sm btn-light" onclick="exec('unlink')" title="断开链接"><i class="fa-solid fa-unlink"></i></button>
+                        <button class="btn btn-sm btn-light" onclick="exec('removeFormat')" title="清除格式"><i class="fa-solid fa-eraser"></i></button>
                     </div>
                     <div class="vr mx-1"></div>
-                    <!-- 使用 onmousedown 防止失去焦点 -->
                     <span class="badge bg-white text-dark border cursor-pointer" onmousedown="insert('{onlineEmoji}', event)">🟢表情</span>
                     <span class="badge bg-info text-dark border cursor-pointer" onmousedown="insert('{序号}', event)">#️⃣序号</span>
                     {% for f in fields %}
@@ -110,7 +125,6 @@
             </div>
         </div>
 
-        <!-- 自定义按钮 (可视化编辑) -->
         <div class="card shadow-sm border-0">
             <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
                 <span class="fw-bold">自定义按钮</span>
@@ -118,7 +132,6 @@
             </div>
             <div class="card-body">
                 <div id="btnContainer" class="row g-2"></div>
-                <!-- 隐藏的 textarea 用于存储 JSON -->
                 <textarea id="custom_buttons" class="form-control d-none">{{ conf.custom_buttons }}</textarea>
             </div>
         </div>
@@ -138,15 +151,10 @@
     };
     
     const currentGroupId = {{ group.id }};
-    
-    // 初始化按钮
     let btnData = [];
     try { btnData = JSON.parse(document.getElementById('custom_buttons').value || '[]'); } catch(e){}
 
-    document.addEventListener('DOMContentLoaded', () => {
-        loadMsg();
-        renderBtns();
-    });
+    document.addEventListener('DOMContentLoaded', () => { loadMsg(); renderBtns(); });
 
     function renderBtns() {
         const con = document.getElementById('btnContainer');
@@ -174,16 +182,20 @@
     }
     
     function saveTmp() { 
-        msgs[document.getElementById('msgSelector').value] = document.getElementById('editor').innerHTML; 
+        let content = document.getElementById('editor').innerHTML;
+        content = content.replace(/&nbsp;/g, ' '); 
+        msgs[document.getElementById('msgSelector').value] = content;
         const btn = document.querySelector('.btn-secondary');
         btn.innerHTML = '已暂存'; setTimeout(() => btn.innerHTML = '暂存', 500);
     }
     
-    function cmd(c,v){ document.getElementById('editor').focus(); document.execCommand(c,false,v); }
-    
-    // 🆕 修复光标乱跳
+    function exec(cmd, val) {
+        document.getElementById('editor').focus();
+        document.execCommand(cmd, false, val);
+    }
+
     function insert(text, e) {
-        e.preventDefault(); // 阻止默认点击行为
+        e.preventDefault();
         const sel = window.getSelection();
         if (sel.rangeCount > 0) {
             const range = sel.getRangeAt(0);
@@ -196,11 +208,11 @@
             sel.addRange(range);
         } else {
              document.getElementById('editor').focus();
-             cmd('insertText', text);
+             exec('insertText', text);
         }
     }
     
-    function link(){ let u=prompt('URL:'); if(u) cmd('createLink',u); }
+    function addLink() { let u=prompt('URL:'); if(u) exec('createLink', u); }
     
     function saveSettings() {
         saveTmp(); 
@@ -210,20 +222,17 @@
                 ...msgs,
                 checkin_open: document.getElementById('checkin_open').checked,
                 checkin_cmd: document.getElementById('checkin_cmd').value,
-                
                 query_open: document.getElementById('query_open').checked,
                 query_cmd: document.getElementById('query_cmd').value,
                 query_filter_open: document.getElementById('query_filter_open').checked,
-                
                 page_size: document.getElementById('page_size').value,
                 checkin_del_time: document.getElementById('checkin_del_time').value,
                 query_del_time: document.getElementById('query_del_time').value,
-                
                 auto_like: document.getElementById('auto_like').checked,
                 like_emoji: document.getElementById('like_emoji').value,
-                
+                auto_mute_expired: document.getElementById('auto_mute_expired').checked,
                 push_channel_id: document.getElementById('push_channel_id').value,
-                custom_buttons: JSON.stringify(btnData.filter(b => b.text && b.url)), // 保存按钮数据
+                custom_buttons: JSON.stringify(btnData.filter(b => b.text && b.url)),
                 online_emoji: "{{ conf.online_emoji }}", 
                 offline_emoji: "{{ conf.offline_emoji }}"
             }
