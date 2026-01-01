@@ -17,15 +17,15 @@ def start_bot_loop():
 
 if __name__ == '__main__':
     with app.app_context():
-        # ⚠️ 首次运行或表结构变更时取消注释下面一行
-        # db.drop_all() 
+        # ⚠️ 首次部署或数据库报错时，取消注释下面一行以重置数据库
+        # db.drop_all()
         db.create_all()
     
-    # 启动 Web
+    # 启动 Flask 网页后台 (子线程)
     t = threading.Thread(target=run_flask, daemon=True)
     t.start()
     
-    # 启动 Bot
+    # 启动 Bot (主线程)
     try:
         start_bot_loop()
     except KeyboardInterrupt:
