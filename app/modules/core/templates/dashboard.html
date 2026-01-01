@@ -2,42 +2,71 @@
 {% block content %}
 <div class="row mb-4">
     <div class="col-12">
-        <h4 class="fw-bold"><i class="fa-solid fa-server me-2"></i>群组与频道管理</h4>
-        <p class="text-muted">点击下方卡片，为每个群组单独配置打卡规则、欢迎语和功能开关。</p>
-    </div>
-</div>
-
-<div class="row g-4">
-    {% for chat in chats %}
-    <div class="col-md-4 col-xl-3">
-        <div class="card h-100 shadow-sm border-0 cursor-pointer" onclick="location.href='/core/settings/{{ chat.id }}'">
-            <div class="card-body text-center p-4">
-                <div class="mb-3">
-                    {% if chat.type == 'channel' %}
-                    <i class="fa-solid fa-bullhorn fa-3x text-success"></i>
-                    {% else %}
-                    <i class="fa-solid fa-users-rectangle fa-3x text-primary"></i>
-                    {% endif %}
-                </div>
-                <h5 class="fw-bold text-truncate">{{ chat.title }}</h5>
-                <p class="text-muted small mb-3">ID: {{ chat.id }}</p>
-                <span class="badge bg-light text-dark border">
-                    {{ '📢 频道' if chat.type == 'channel' else '👥 群组' }}
-                </span>
-                <button class="btn btn-outline-primary btn-sm w-100 mt-3 rounded-pill">
-                    <i class="fa-solid fa-gear me-1"></i> 管理配置
-                </button>
+        <div class="card border-0 shadow-sm bg-primary text-white">
+            <div class="card-body p-4">
+                <h4 class="fw-bold mb-1"><i class="fa-solid fa-server me-2"></i>群组管理控制台</h4>
+                <p class="mb-0 opacity-75">机器人会自动发现群组。点击“启用”开关来激活机器人，点击“管理”来设置该群的独立规则。</p>
             </div>
         </div>
     </div>
-    {% else %}
-    <div class="col-12 text-center py-5">
-        <div class="text-muted">
-            <i class="fa-brands fa-telegram fa-4x mb-3 text-secondary"></i>
-            <h5>暂未发现群组</h5>
-            <p>请将机器人拉入群组或频道，并发送任意消息，系统会自动识别。</p>
-        </div>
-    </div>
-    {% endfor %}
 </div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        {% if groups|length == 0 %}
+        <div class="text-center py-5 text-muted">
+            <i class="fa-solid fa-robot fa-3x mb-3"></i>
+            <p>暂无数据。请将机器人拉入群组，并发送任意消息来激活。</p>
+        </div>
+        {% else %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">名称</th>
+                        <th>类型</th>
+                        <th>Chat ID</th>
+                        <th class="text-center">启用状态</th>
+                        <th class="text-end pe-4">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for g in groups %}
+                    <tr>
+                        <td class="ps-4 fw-bold text-truncate" style="max-width: 200px;">{{ g.title }}</td>
+                        <td>
+                            {% if g.type == 'supergroup' %}<span class="badge bg-info bg-opacity-10 text-info border">超级群</span>
+                            {% elif g.type == 'channel' %}<span class="badge bg-warning bg-opacity-10 text-warning border">频道</span>
+                            {% else %}<span class="badge bg-secondary bg-opacity-10 text-secondary border">普通群</span>{% endif %}
+                        </td>
+                        <td class="font-monospace text-muted small">{{ g.chat_id }}</td>
+                        <td class="text-center">
+                            <div class="form-check form-switch d-inline-block">
+                                <input class="form-check-input" type="checkbox" onchange="toggleGroup({{ g.id }}, this.checked)" {{ 'checked' if g.is_active }}>
+                            </div>
+                        </td>
+                        <td class="text-end pe-4">
+                            <!-- 🆕 单独管理按钮 -->
+                            <a href="/core/group/{{ g.id }}" class="btn btn-sm btn-outline-primary fw-bold">
+                                <i class="fa-solid fa-gear me-1"></i> 管理
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    function toggleGroup(id, active) {
+        fetch('/core/api/toggle_group', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id, active: active})
+        });
+    }
+</script>
 {% endblock %}
