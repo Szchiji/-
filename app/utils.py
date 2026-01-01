@@ -1,23 +1,16 @@
-from .models import SystemConfig, db, DEFAULT_FIELDS
+from .models import Config, db
 import json
 
-def get_conf(key, default=None):
-    """获取配置，自动处理JSON反序列化"""
-    c = SystemConfig.query.get(key)
-    if not c: return default
-    try:
-        return json.loads(c.value)
-    except:
-        return c.value
+def get_conf(key, default):
+    c = Config.query.filter_by(key=key).first()
+    return json.loads(c.value) if c else default
 
 def set_conf(key, value):
-    """保存配置，自动处理JSON序列化"""
-    c = SystemConfig.query.get(key)
+    c = Config.query.filter_by(key=key).first()
     if not c:
-        c = SystemConfig(key=key)
+        c = Config(key=key)
         db.session.add(c)
-    
-    if isinstance(value, (dict, list, bool, int)):
+    if isinstance(value, (dict, list)):
         c.value = json.dumps(value, ensure_ascii=False)
     else:
         c.value = str(value)
