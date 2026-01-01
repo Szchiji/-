@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="fw-bold mb-1"><i class="fa-solid fa-users-gear me-2"></i>{{ group.title }}</h4>
+        <p class="text-muted mb-0 small">正在配置群组 ID: {{ group.chat_id }} | <span class="text-info">留空则使用全局默认值</span></p>
+    </div>
+    <a href="/core/dashboard" class="btn btn-outline-secondary"><i class="fa-solid fa-arrow-left me-1"></i> 返回列表</a>
+</div>
+
+<div class="row">
+    <!-- 打卡独立配置 -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-header bg-white fw-bold py-3 text-primary">打卡配置 (独立)</div>
+            <div class="card-body">
+                <div class="form-check form-switch mb-3 p-2 bg-light rounded">
+                    <input class="form-check-input ms-0 me-2" type="checkbox" id="checkin_open" {{ 'checked' if g_conf.get('checkin_open', sys.checkin_open) }}>
+                    <label class="fw-bold">开启本群打卡</label>
+                </div>
+                <div class="mb-3">
+                    <label class="small text-muted">本群打卡指令 (默认: {{ sys.checkin_cmd }})</label>
+                    <input id="checkin_cmd" class="form-control" placeholder="留空使用默认..." value="{{ g_conf.get('checkin_cmd', '') }}">
+                </div>
+                
+                <label class="small text-muted fw-bold mb-2">本群文案 (点击修改)</label>
+                <div class="d-grid gap-2 mb-3">
+                    <button class="btn btn-light border text-start text-truncate" onclick="openEditor('msg_checkin_success','打卡成功')">
+                        ✅ 成功: {{ g_conf.get('msg_checkin_success') or '默认值' }}
+                    </button>
+                    <button class="btn btn-light border text-start text-truncate" onclick="openEditor('msg_not_registered','未认证')">
+                        ⚠️ 未认证: {{ g_conf.get('msg_not_registered') or '默认值' }}
+                    </button>
+                    <button class="btn btn-light border text-start text-truncate" onclick="openEditor('msg_repeat_checkin','重复打卡')">
+                        🔄 重复: {{ g_conf.get('msg_repeat_checkin') or '默认值' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 查询独立配置 -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-header bg-white fw-bold py-3 text-success">查询配置 (独立)</div>
+            <div class="card-body">
+                <div class="form-check form-switch mb-3 p-2 bg-light rounded">
+                    <input class="form-check-input ms-0 me-2" type="checkbox" id="query_open" {{ 'checked' if g_conf.get('query_open', sys.query_open) }}>
+                    <label class="fw-bold">开启本群查询</label>
+                </div>
+                <div class="mb-3">
+                    <label class="small text-muted">本群查询指令 (默认: {{ sys.query_cmd }})</label>
+                    <input id="query_cmd" class="form-control" placeholder="留空使用默认..." value="{{ g_conf.get('query_cmd', '') }}">
+                </div>
+                
+                <label class="small text-muted fw-bold mb-2">本群模板 (点击修改)</label>
+                <div class="d-grid gap-2 mb-3">
+                    <button class="btn btn-light border text-start text-truncate" onclick="openEditor('msg_query_header','列表抬头')">
+                        📝 抬头: {{ g_conf.get('msg_query_header') or '默认值' }}
+                    </button>
+                    <button class="btn btn-light border text-start text-truncate" onclick="openEditor('template','用户模板')">
+                        👤 模板: {{ g_conf.get('template') or '默认值' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<button class="btn btn-primary w-100 fw-bold mb-5 shadow" onclick="saveGroup()">
+    <i class="fa-solid fa-save me-2"></i>保存本群设置
+</button>
+
+<!-- 弹窗编辑器 (复用) -->
+<div class="modal fade" id="editorModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header py-2"><h6 class="modal-title fw-bold">编辑</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body p-0">
+            <div class="p-3 border-bottom bg-light d-flex flex-wrap gap-2">
+                <span class="text-muted fw-bold">变量:</span>
+                <span class="cursor-pointer text-primary" onclick="insert('{onlineEmoji}')">表情</span>
+                {% for f in fields %}<span class="cursor-pointer text-primary" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>{% endfor %}
+            </div>
+            <div id="richEditor" class="p-3" contenteditable="true" style="min-height:200px;outline:none"></div>
+        </div>
+        <div class="modal-footer py-2"><button class="btn btn-primary" onclick="saveEd()">确定</button></div>
+    </div></div>
+</div>
+
+<!-- 隐藏域存储当前群配置 (如果为空则空) -->
+<div style="display:none">
+    <textarea id="v_msg_checkin_success">{{ g_conf.get('msg_checkin_success', '') }}</textarea>
+    <textarea id="v_msg_not_registered">{{ g_conf.get('msg_not_registered', '') }}</textarea>
+    <textarea id="v_msg_repeat_checkin">{{ g_conf.get('msg_repeat_checkin', '') }}</textarea>
+    <textarea id="v_msg_query_header">{{ g_conf.get('msg_query_header', '') }}</textarea>
+    <textarea id="v_template">{{ g_conf.get('template', '') }}</textarea>
+</div>
+
+<script>
+    let cur='', modal=null;
+    document.addEventListener('DOMContentLoaded', ()=> modal = new bootstrap.Modal(document.getElementById('editorModal')));
+    function openEditor(k,t){ cur=k; document.querySelector('.modal-title').innerText=t; document.getElementById('richEditor').innerHTML=document.getElementById('v_'+k).value; modal.show(); }
+    function saveEd(){ document.getElementById('v_'+cur).value=document.getElementById('richEditor').innerHTML; modal.hide(); }
+    function insert(t){ document.getElementById('richEditor').focus(); document.execCommand('insertText',false,t); }
+    
+    function saveGroup(){
+        // 获取所有字段，如果为空字符串则传 null (后端不做合并) 或保留为空字符串
+        // 这里我们策略是：如果为空字符串，则表示“未设置”，后端逻辑里不覆盖全局。
+        // 但为了简单，前端传什么存什么。
+        const d = {
+            id: {{ group.id }},
+            config: {
+                checkin_open: document.getElementById('checkin_open').checked,
+                checkin_cmd: document.getElementById('checkin_cmd').value,
+                query_open: document.getElementById('query_open').checked,
+                query_cmd: document.getElementById('query_cmd').value,
+                msg_checkin_success: document.getElementById('v_msg_checkin_success').value,
+                msg_not_registered: document.getElementById('v_msg_not_registered').value,
+                msg_repeat_checkin: document.getElementById('v_msg_repeat_checkin').value,
+                msg_query_header: document.getElementById('v_msg_query_header').value,
+                template: document.getElementById('v_template').value
+            }
+        };
+        fetch('/core/api/save_group_config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)})
+        .then(()=>alert('✅ 群组独立配置已保存！'));
+    }
+</script>
+<style>.cursor-pointer:hover{text-decoration:underline}</style>
+{% endblock %}
