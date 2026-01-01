@@ -1,13 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-    <div class="card-header fw-bold">字段配置 (复刻截图9)</div>
+    <div class="card-header">
+        <span>字段构建器</span>
+        <button class="btn btn-sm btn-success" onclick="addField()">+ 新增字段</button>
+    </div>
     <div class="card-body">
         <div id="fieldsCon"></div>
-        <button class="btn btn-sm btn-outline-primary mt-3" onclick="addField()">+ 新增</button>
-        <button class="btn btn-primary mt-3 w-100" onclick="save()">保存配置</button>
+        <button class="btn btn-primary w-100 mt-4" onclick="save()">保存所有配置</button>
     </div>
 </div>
+
 <script>
     let fields = {{ fields|tojson }};
     function render() {
@@ -16,30 +19,44 @@
         fields.forEach((f,i) => {
             let optHtml = '';
             if(f.type !== 'text') {
-                let tags = (f.options||[]).map(o=>`<span class="badge bg-info me-1">${o} <span style="cursor:pointer" onclick="delOpt(${i},'${o}')">&times;</span></span>`).join('');
-                optHtml = `<div class="mt-2 border p-2 rounded">${tags}<input class="border-0 outline-0 ms-2" placeholder="输入回车..." onkeydown="addOpt(event,${i})"></div>`;
+                let tags = (f.options||[]).map(o=>`<span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25 me-1 mb-1" style="font-weight:normal">${o} <i class="fa-solid fa-times ms-1" style="cursor:pointer" onclick="delOpt(${i},'${o}')"></i></span>`).join('');
+                optHtml = `<div class="mt-2 p-2 border rounded bg-light">${tags}<input class="border-0 bg-transparent outline-0 ms-1" style="width:120px" placeholder="输入回车添加..." onkeydown="addOpt(event,${i})"></div>`;
             }
+            
             con.innerHTML += `
-            <div class="row g-2 mb-3 border-bottom pb-3">
-                <div class="col-md-3"><input class="form-control" value="${f.label}" onchange="fields[${i}].label=this.value" placeholder="名称"></div>
-                <div class="col-md-3"><input class="form-control" value="${f.key}" onchange="fields[${i}].key=this.value" placeholder="Key"></div>
-                <div class="col-md-2">
-                    <select class="form-select" onchange="fields[${i}].type=this.value;render()">
-                        <option value="text" ${f.type=='text'?'selected':''}>文本</option>
-                        <option value="select" ${f.type=='select'?'selected':''}>单选</option>
-                        <option value="checkbox" ${f.type=='checkbox'?'selected':''}>多选</option>
-                    </select>
+            <div class="card mb-3 border shadow-sm">
+                <div class="card-body p-3">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-md-3">
+                            <label class="small text-muted">显示名称</label>
+                            <input class="form-control" value="${f.label}" onchange="fields[${i}].label=this.value">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="small text-muted">字段Key (英文)</label>
+                            <input class="form-control" value="${f.key}" onchange="fields[${i}].key=this.value">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="small text-muted">类型</label>
+                            <select class="form-select" onchange="fields[${i}].type=this.value;render()">
+                                <option value="text" ${f.type=='text'?'selected':''}>文本</option>
+                                <option value="select" ${f.type=='select'?'selected':''}>单选</option>
+                                <option value="checkbox" ${f.type=='checkbox'?'selected':''}>多选</option>
+                            </select>
+                        </div>
+                        <div class="col-md-1 text-center pt-4">
+                            <button class="btn btn-outline-danger btn-sm rounded-circle" onclick="delField(${i})"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                        <div class="col-12">${optHtml}</div>
+                    </div>
                 </div>
-                <div class="col-md-3">${optHtml}</div>
-                <div class="col-md-1"><button class="btn btn-danger btn-sm" onclick="delField(${i})">×</button></div>
             </div>`;
         });
     }
-    function addOpt(e,i) { if(e.key==='Enter'){ e.preventDefault(); let v=e.target.value; if(v){ if(!fields[i].options) fields[i].options=[]; fields[i].options.push(v); render(); }}}
+    function addOpt(e,i) { if(e.key==='Enter'){ e.preventDefault(); let v=e.target.value.trim(); if(v){ if(!fields[i].options) fields[i].options=[]; fields[i].options.push(v); render(); }}}
     function delOpt(i,v) { fields[i].options = fields[i].options.filter(o=>o!==v); render(); }
     function addField() { fields.push({key:'k'+Date.now(), label:'', type:'text'}); render(); }
     function delField(i) { fields.splice(i,1); render(); }
-    function save() { fetch('/api/save_fields', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(fields)}).then(()=>alert('Saved')); }
+    function save() { fetch('/api/save_fields', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(fields)}).then(()=>alert('保存成功')); }
     render();
 </script>
 {% endblock %}
