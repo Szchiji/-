@@ -1,109 +1,66 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="fw-bold m-0"><i class="fa-solid fa-gear me-2"></i>功能设置</h4>
+    <h4 class="fw-bold m-0">功能设置</h4>
     <button class="btn btn-primary fw-bold px-4" onclick="saveSettings()">
         <i class="fa-solid fa-save me-2"></i> 保存配置
     </button>
 </div>
 
 <div class="row">
-    <!-- 左侧：基础开关 -->
+    <!-- 左侧：开关与参数 -->
     <div class="col-lg-4 mb-4">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white fw-bold py-3">打卡与交互</div>
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white fw-bold">打卡与查询</div>
             <div class="card-body">
-                <!-- 打卡 -->
-                <div class="form-check form-switch mb-3 p-2 bg-light rounded d-flex justify-content-between align-items-center">
-                    <label class="fw-bold m-0">开启打卡功能</label>
-                    <input class="form-check-input m-0" type="checkbox" id="checkin_open" {{ 'checked' if conf.checkin_open }}>
+                <div class="form-check form-switch mb-3 p-2 bg-light rounded">
+                    <input class="form-check-input ms-0 me-2" type="checkbox" id="checkin_open" {{ 'checked' if conf.checkin_open }}>
+                    <label class="fw-bold">开启打卡</label>
                 </div>
-                <div class="mb-3">
-                    <label class="small text-muted">打卡指令</label>
-                    <input id="checkin_cmd" class="form-control" value="{{ conf.checkin_cmd }}">
-                </div>
-                <div class="mb-3">
-                    <label class="small text-muted">消息自动删除 (秒)</label>
-                    <input type="number" id="checkin_del_time" class="form-control" value="{{ conf.checkin_del_time }}">
-                    <div class="form-text small" style="font-size: 11px;">* 自动删除用户的指令和机器人的回复</div>
-                </div>
+                <div class="mb-2"><label class="small text-muted">打卡指令</label><input id="checkin_cmd" class="form-control" value="{{ conf.checkin_cmd }}"></div>
+                <div class="mb-2"><label class="small text-muted">查询指令</label><input id="query_cmd" class="form-control" value="{{ conf.query_cmd }}"></div>
+                <div class="mb-3"><label class="small text-muted">删除时间(s)</label><input type="number" id="checkin_del_time" class="form-control" value="{{ conf.checkin_del_time }}"></div>
+                <hr>
+                <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if conf.auto_like }}><label>自动点赞</label></div>
+                <div class="input-group input-group-sm"><span class="input-group-text">表情</span><input id="like_emoji" class="form-control" value="{{ conf.like_emoji }}"></div>
+            </div>
+        </div>
 
-                <hr class="my-4">
-
-                <!-- 查询 -->
-                <div class="form-check form-switch mb-3 p-2 bg-light rounded d-flex justify-content-between align-items-center">
-                    <label class="fw-bold m-0">开启查询功能</label>
-                    <input class="form-check-input m-0" type="checkbox" id="query_open" {{ 'checked' if conf.query_open }}>
-                </div>
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white fw-bold text-success">推送配置</div>
+            <div class="card-body">
                 <div class="mb-3">
-                    <label class="small text-muted">查询指令</label>
-                    <input id="query_cmd" class="form-control" value="{{ conf.query_cmd }}">
-                    <div class="form-text small" style="font-size: 11px;">* 支持 "查询" 或 "查询 关键词"</div>
-                </div>
-
-                <hr class="my-4">
-
-                <!-- 互动 & 推送 -->
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <label class="small text-muted">自动点赞</label>
-                        <div class="form-check form-switch m-0">
-                            <input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if conf.auto_like }}>
-                        </div>
-                    </div>
-                    <input id="like_emoji" class="form-control" value="{{ conf.like_emoji }}" placeholder="❤️">
-                </div>
-
-                <div class="mb-3">
-                    <label class="small text-muted fw-bold text-success">绑定推送频道</label>
-                    <select id="push_channel_id" class="form-select">
-                        <option value="">-- 不推送 --</option>
-                        {% for c in channels %}
-                        <option value="{{ c.chat_id }}" {{ 'selected' if c.chat_id == conf.push_channel_id }}>{{ c.title }}</option>
-                        {% endfor %}
-                    </select>
-                    {% if not channels %}
-                    <div class="form-text text-danger small">未发现频道，请先将机器人拉入频道。</div>
-                    {% endif %}
+                    <label class="small text-muted">推送目标频道 ID</label>
+                    <input id="push_channel_id" class="form-control" placeholder="-100xxxxxxxx" value="{{ conf.push_channel_id or '' }}">
+                    <div class="form-text small">将机器人拉入频道，发送任意消息即可在【群组列表】看到频道ID。</div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 右侧：文案编辑器 -->
+    <!-- 右侧：文案配置 -->
     <div class="col-lg-8 mb-4">
         <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
-                <span class="fw-bold">文案与模板配置</span>
-                <select class="form-select form-select-sm w-auto border-primary text-primary fw-bold" id="msgSelector" onchange="loadMsg()">
-                    <option value="template">👤 用户展示模板</option>
-                    <option value="msg_checkin_success">✅ 打卡成功消息</option>
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span class="fw-bold">文案与模板</span>
+                <select class="form-select form-select-sm w-auto" id="msgSelector" onchange="loadMsg()">
+                    <option value="template">👤 查询列表-单行模板</option>
+                    <option value="push_template">📢 频道推送-名片模板</option>
+                    <option value="msg_checkin_success">✅ 打卡成功</option>
                     <option value="msg_not_registered">⚠️ 未认证提示</option>
-                    <option value="msg_repeat_checkin">🔄 重复打卡提示</option>
-                    <option value="msg_query_header">📝 查询列表抬头</option>
+                    <option value="msg_repeat_checkin">🔄 重复打卡</option>
+                    <option value="msg_query_header">🔍 查询抬头</option>
                 </select>
             </div>
-            <div class="card-body d-flex flex-column p-0">
-                <!-- 工具栏 (找回了加粗和链接) -->
-                <div class="p-2 bg-light border-bottom d-flex flex-wrap gap-2 align-items-center">
-                    <div class="btn-group bg-white border rounded shadow-sm">
-                        <button class="btn btn-sm btn-light" onclick="cmd('bold')" title="加粗"><i class="fa-solid fa-bold"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="cmd('italic')" title="斜体"><i class="fa-solid fa-italic"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="link()" title="插入链接"><i class="fa-solid fa-link"></i></button>
-                    </div>
-                    <div class="vr mx-1"></div>
-                    <span class="badge bg-white text-dark border cursor-pointer hover-shadow" onclick="insert('{onlineEmoji}')">🟢表情</span>
+            <div class="card-body d-flex flex-column">
+                <div class="border rounded-top bg-light p-2 d-flex flex-wrap gap-2">
+                    <span class="badge bg-white text-dark border cursor-pointer" onclick="insert('{onlineEmoji}')">表情</span>
                     {% for f in fields %}
-                    <span class="badge bg-white text-primary border cursor-pointer hover-shadow" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>
+                    <span class="badge bg-white text-primary border cursor-pointer" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>
                     {% endfor %}
                 </div>
-                
-                <!-- 编辑器 -->
-                <div id="editor" class="p-3 flex-grow-1" contenteditable="true" style="outline:none; min-height: 300px; font-size: 15px; line-height: 1.6;"></div>
-                
-                <div class="p-2 border-top bg-light text-end">
-                    <button class="btn btn-sm btn-secondary" onclick="saveTmp()">暂存当前文案</button>
-                </div>
+                <div id="editor" class="form-control border-top-0 rounded-bottom flex-grow-1 p-3" contenteditable="true" style="min-height: 250px; outline:none"></div>
+                <div class="text-end mt-2"><button class="btn btn-light btn-sm" onclick="saveTmp()">暂存文案</button></div>
             </div>
         </div>
     </div>
@@ -112,39 +69,22 @@
 <script>
     let msgs = {
         template: `{{ conf.template|safe }}`,
+        push_template: `{{ conf.push_template|safe }}`,
         msg_checkin_success: `{{ conf.msg_checkin_success|safe }}`,
         msg_not_registered: `{{ conf.msg_not_registered|safe }}`,
         msg_repeat_checkin: `{{ conf.msg_repeat_checkin|safe }}`,
         msg_query_header: `{{ conf.msg_query_header|safe }}`
     };
-    
-    // 初始化
-    document.addEventListener('DOMContentLoaded', () => loadMsg());
-
-    function loadMsg() { 
-        document.getElementById('editor').innerHTML = msgs[document.getElementById('msgSelector').value]; 
-    }
-    
-    function saveTmp() { 
-        msgs[document.getElementById('msgSelector').value] = document.getElementById('editor').innerHTML; 
-        // 简单动画反馈
-        const btn = document.querySelector('.btn-secondary');
-        const org = btn.innerHTML;
-        btn.innerHTML = '已暂存';
-        setTimeout(() => btn.innerHTML = org, 800);
-    }
-    
-    function cmd(c,v){ document.getElementById('editor').focus(); document.execCommand(c,false,v); }
-    function insert(t){ cmd('insertText', t); }
-    function link(){ let u=prompt('请输入链接地址 (URL):'); if(u) cmd('createLink',u); }
+    function loadMsg() { document.getElementById('editor').innerHTML = msgs[document.getElementById('msgSelector').value]; }
+    function saveTmp() { msgs[document.getElementById('msgSelector').value] = document.getElementById('editor').innerHTML; }
+    function insert(t){ document.getElementById('editor').focus(); document.execCommand('insertText',false,t); }
     
     function saveSettings() {
-        saveTmp(); // 先保存当前编辑器的内容
+        saveTmp(); 
         const d = {
             ...msgs,
             checkin_open: document.getElementById('checkin_open').checked,
             checkin_cmd: document.getElementById('checkin_cmd').value,
-            query_open: document.getElementById('query_open').checked,
             query_cmd: document.getElementById('query_cmd').value,
             checkin_del_time: document.getElementById('checkin_del_time').value,
             auto_like: document.getElementById('auto_like').checked,
@@ -152,14 +92,10 @@
             push_channel_id: document.getElementById('push_channel_id').value,
             online_emoji: "{{ conf.online_emoji }}", offline_emoji: "{{ conf.offline_emoji }}"
         };
-        fetch('/core/api/save_settings', {
-            method:'POST', 
-            headers:{'Content-Type':'application/json'}, 
-            body:JSON.stringify(d)
-        }).then(()=>alert('✅ 当前群组配置已保存'));
+        fetch('/core/api/save_settings', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)})
+        .then(()=>alert('✅ 已保存当前群组配置'));
     }
+    loadMsg();
 </script>
-<style>
-    .hover-shadow:hover { box-shadow: 0 2px 5px rgba(0,0,0,0.1); transform: translateY(-1px); transition: 0.2s; }
-</style>
+<style>.cursor-pointer:hover{opacity:0.8}</style>
 {% endblock %}
