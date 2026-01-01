@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header">消息模板 (复刻截图1)</div>
+            <div class="card-body">
+                <div class="mb-2">
+                    {% for f in fields %}
+                    <span class="badge bg-secondary me-1 cursor-pointer" onclick="editor.insertVar('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>
+                    {% endfor %}
+                    <span class="badge bg-secondary cursor-pointer" onclick="editor.insertVar('{onlineEmoji}')">在线表情</span>
+                </div>
+                <div id="editorCon"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header">系统参数 (截图10)</div>
+            <div class="card-body">
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if sys.auto_like }}>
+                    <label>自动点赞打卡</label>
+                </div>
+                <div class="mb-3"><label>点赞表情</label><input id="like_emoji" class="form-control" value="{{ sys.like_emoji }}"></div>
+                <div class="mb-3"><label>推送频道ID</label><input id="push_channel_id" class="form-control" value="{{ sys.push_channel_id }}"></div>
+                <div class="mb-3"><label>在线Emoji</label><input id="online_emoji" class="form-control" value="{{ sys.online_emoji }}"></div>
+                <button class="btn btn-primary w-100" onclick="saveSys()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    const editor = new CustomEditor('editorCon', `{{ sys.template|safe }}`);
+    function saveSys() {
+        const data = {
+            template: editor.getValue(),
+            auto_like: document.getElementById('auto_like').checked,
+            like_emoji: document.getElementById('like_emoji').value,
+            push_channel_id: document.getElementById('push_channel_id').value,
+            online_emoji: document.getElementById('online_emoji').value,
+            checkin_open: true, query_open: true, checkin_cmd: '/daka', query_cmd: '/online'
+        };
+        fetch('/api/save_system', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}).then(()=>alert('Saved'));
+    }
+</script>
+{% endblock %}
