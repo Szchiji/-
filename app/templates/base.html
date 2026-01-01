@@ -22,18 +22,20 @@
         .btn-primary { background: var(--primary); border: none; }
         .login-wrap { position: fixed; inset: 0; background: #f3f4f6; display: flex; justify-content: center; align-items: center; z-index: 999; }
         
-        /* 自定义编辑器 JS */
-        .editor-tb { padding: 5px; background: #f8f9fa; border-bottom: 1px solid #eee; }
-        .editor-content { min-height: 150px; padding: 10px; outline: none; }
+        /* 修复：增强的编辑器样式 */
+        .editor-tb { padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-bottom: none; border-radius: 5px 5px 0 0; display: flex; gap: 5px; }
+        .editor-btn { background: white; border: 1px solid #ced4da; padding: 4px 10px; border-radius: 4px; cursor: pointer; color: #555; font-size: 14px; }
+        .editor-btn:hover { background: #e9ecef; }
+        .editor-content { min-height: 200px; padding: 15px; border: 1px solid #dee2e6; border-radius: 0 0 5px 5px; outline: none; background: white; }
     </style>
     <script>
-        // 全局简单的编辑器逻辑
-        function initEditor(id, content) {
-            const el = document.getElementById(id);
-            if(el) { el.innerHTML = content; }
-        }
-        function execCmd(cmd, val) { document.execCommand(cmd, false, val); }
+        // 修复：编辑器核心功能库 (全局可用)
+        function execCmd(cmd, val=null) { document.execCommand(cmd, false, val); }
         function insertTxt(txt) { execCmd('insertText', txt); }
+        function promptLink() {
+            let url = prompt("请输入链接地址:", "https://");
+            if (url) execCmd('createLink', url);
+        }
     </script>
 </head>
 <body>
@@ -51,8 +53,7 @@
         <a href="/users" class="nav-link {{ 'active' if page == 'users' else '' }}"><i class="fa-solid fa-users"></i> 认证用户</a>
         <div class="menu-head">系统配置</div>
         <a href="/fields" class="nav-link {{ 'active' if page == 'fields' else '' }}"><i class="fa-solid fa-list-check"></i> 字段配置</a>
-        <a href="/template" class="nav-link {{ 'active' if page == 'template' else '' }}"><i class="fa-solid fa-file-alt"></i> 消息模板</a>
-        <a href="/system" class="nav-link {{ 'active' if page == 'system' else '' }}"><i class="fa-solid fa-sliders"></i> 系统设置</a>
+        <a href="/system" class="nav-link {{ 'active' if page == 'system' else '' }}"><i class="fa-solid fa-gear"></i> 系统设置</a>
         <div class="mt-5 px-3"><a href="/logout" class="btn btn-outline-danger w-100 btn-sm"><i class="fa-solid fa-power-off"></i> 退出</a></div>
     </div>
     <div class="main">
