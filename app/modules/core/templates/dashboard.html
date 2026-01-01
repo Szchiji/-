@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h4 class="fw-bold"><i class="fa-solid fa-server me-2"></i>群组与频道管理</h4>
+        <p class="text-muted">点击下方卡片，为每个群组单独配置打卡规则、欢迎语和功能开关。</p>
+    </div>
+</div>
+
+<div class="row g-4">
+    {% for chat in chats %}
+    <div class="col-md-4 col-xl-3">
+        <div class="card h-100 shadow-sm border-0 cursor-pointer" onclick="location.href='/core/settings/{{ chat.id }}'">
+            <div class="card-body text-center p-4">
+                <div class="mb-3">
+                    {% if chat.type == 'channel' %}
+                    <i class="fa-solid fa-bullhorn fa-3x text-success"></i>
+                    {% else %}
+                    <i class="fa-solid fa-users-rectangle fa-3x text-primary"></i>
+                    {% endif %}
+                </div>
+                <h5 class="fw-bold text-truncate">{{ chat.title }}</h5>
+                <p class="text-muted small mb-3">ID: {{ chat.id }}</p>
+                <span class="badge bg-light text-dark border">
+                    {{ '📢 频道' if chat.type == 'channel' else '👥 群组' }}
+                </span>
+                <button class="btn btn-outline-primary btn-sm w-100 mt-3 rounded-pill">
+                    <i class="fa-solid fa-gear me-1"></i> 管理配置
+                </button>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12 text-center py-5">
+        <div class="text-muted">
+            <i class="fa-brands fa-telegram fa-4x mb-3 text-secondary"></i>
+            <h5>暂未发现群组</h5>
+            <p>请将机器人拉入群组或频道，并发送任意消息，系统会自动识别。</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
