@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>阿福Bot Pro</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root { --sidebar-width: 250px; --primary: #5867dd; }
+        body { background: #f2f3f8; font-family: 'Inter', sans-serif; display: flex; min-height: 100vh; }
+        
+        /* 侧边栏 (复刻截图左侧) */
+        .sidebar { width: var(--sidebar-width); background: #fff; position: fixed; height: 100vh; border-right: 1px solid #ebedf2; z-index: 100; overflow-y: auto; }
+        .logo { padding: 20px; font-weight: 800; font-size: 20px; color: var(--primary); display: flex; align-items: center; gap: 10px; }
+        .menu-cat { padding: 15px 25px 5px; font-size: 11px; font-weight: 600; text-transform: uppercase; color: #a1a5b7; letter-spacing: 0.5px; }
+        .nav-link { display: flex; align-items: center; padding: 10px 25px; color: #5e6278; font-weight: 500; font-size: 14px; text-decoration: none; transition: 0.2s; }
+        .nav-link:hover, .nav-link.active { background: #f4f6fa; color: var(--primary); border-right: 3px solid var(--primary); }
+        .nav-link i { width: 25px; font-size: 16px; }
+        
+        /* 内容区 */
+        .main { margin-left: var(--sidebar-width); flex: 1; padding: 30px; }
+        
+        /* 卡片风格 (复刻截图白色块) */
+        .card { border: none; border-radius: 6px; box-shadow: 0 0 20px 0 rgba(76,87,125,.02); background: #fff; margin-bottom: 25px; }
+        .card-header { background: #fff; border-bottom: 1px solid #ebedf2; padding: 20px 25px; font-weight: 600; font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
+        .card-body { padding: 25px; }
+        
+        /* 截图9复刻：标签输入 */
+        .tag-wrap { border: 1px solid #dee2e6; padding: 5px; border-radius: 5px; display: flex; flex-wrap: wrap; gap: 5px; min-height: 38px; }
+        .tag-item { background: #e1f0ff; color: #3699ff; padding: 2px 8px; border-radius: 4px; font-size: 12px; display: flex; align-items: center; }
+        .tag-close { margin-left: 5px; cursor: pointer; font-weight: bold; }
+        .tag-input { border: none; outline: none; font-size: 13px; flex: 1; min-width: 60px; }
+        
+        /* 截图1复刻：富文本工具栏 */
+        .editor-tb { border: 1px solid #ced4da; border-bottom: none; padding: 8px; background: #f8f9fa; border-radius: 5px 5px 0 0; }
+        .editor-btn { border: 1px solid transparent; background: none; padding: 2px 8px; border-radius: 3px; cursor: pointer; color: #555; }
+        .editor-btn:hover { background: #e2e6ea; }
+        .editor-area { border: 1px solid #ced4da; border-radius: 0 0 5px 5px; min-height: 150px; padding: 10px; outline: none; }
+        
+        /* 登录页 */
+        .login-box { width: 100%; height: 100vh; display: flex; justify-content: center; align-items: center; background: #f2f3f8; position: fixed; z-index: 999; }
+    </style>
+</head>
+<body>
+    {% if page == 'login' %}
+    <div class="login-box">
+        <div class="card p-5 text-center shadow">
+            <h4>🤖 阿福Bot Pro</h4>
+            <p class="text-muted">请在 Telegram 发送 /start 获取登录链接</p>
+        </div>
+    </div>
+    {% else %}
+
+    <div class="sidebar">
+        <div class="logo"><i class="fas fa-robot"></i> 阿福Bot</div>
+        
+        <div class="menu-cat">机器人列表</div>
+        <a href="/?tab=users" class="nav-link {{ 'active' if page=='users' else '' }}"><i class="fas fa-users"></i> 认证用户列表</a>
+        
+        <div class="menu-cat">配置中心</div>
+        <a href="/?tab=fields" class="nav-link {{ 'active' if page=='fields' else '' }}"><i class="fas fa-sliders-h"></i> 字段配置 (截图9)</a>
+        <a href="/?tab=template" class="nav-link {{ 'active' if page=='template' else '' }}"><i class="fas fa-file-alt"></i> 消息模板 (截图1)</a>
+        <a href="/?tab=system" class="nav-link {{ 'active' if page=='system' else '' }}"><i class="fas fa-cog"></i> 系统设置</a>
+        
+        <div class="menu-cat">群组功能 (截图2)</div>
+        <a href="#" class="nav-link text-muted"><i class="fas fa-gavel"></i> 自动封禁 (Dev)</a>
+        <a href="#" class="nav-link text-muted"><i class="fas fa-gem"></i> 积分拍卖 (Dev)</a>
+        
+        <a href="/logout" class="nav-link text-danger mt-5"><i class="fas fa-sign-out-alt"></i> 退出登录</a>
+    </div>
+
+    <div class="main">
+        {% if page == 'users' %}
+        <div class="card">
+            <div class="card-header">
+                <span>认证用户列表</span>
+                <div>
+                    <button class="btn btn-primary btn-sm me-2" onclick="openModal()"><i class="fas fa-plus"></i> 添加用户</button>
+                    <button class="btn btn-outline-secondary btn-sm">修改模板</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light"><tr><th>名字</th><th>用户信息预览</th><th>会员ID</th><th>操作</th></tr></thead>
+                    <tbody>
+                    {% for u in users %}
+                    <tr>
+                        {% set p = u.profile_data|from_json %}
+                        <td class="fw-bold">{{ p.name }}</td>
+                        <td>
+                            {% for k,v in p.items() %}
+                                {% if loop.index < 5 and v %}<span class="badge bg-light text-dark border me-1">{{ v }}</span>{% endif %}
+                            {% endfor %}
+                        </td>
+                        <td>{{ u.tg_id }}</td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick='editUser({{ u.id }}, {{ u.tg_id }}, {{ u.profile_data|tojson }})'>编辑</button>
+                            <button class="btn btn-sm btn-secondary">推送</button>
+                            <a href="/del_user/{{ u.id }}" class="btn btn-sm btn-danger" onclick="return confirm('删除?')">删除</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% elif page == 'fields' %}
+        <!-- 完全复刻截图9：字段配置 -->
+        <div class="card">
+            <div class="card-header">字段配置</div>
+            <div class="card-body">
+                <div class="alert alert-light border mb-4 text-muted small">
+                    <i class="fas fa-info-circle text-primary"></i> 这里的配置决定了用户添加弹窗里有哪些输入框。
+                </div>
+                <form id="fieldForm" action="/save_fields" method="post">
+                    <input type="hidden" name="fields_json" id="fieldsJson">
+                    <div id="fieldsContainer"></div>
+                    <button type="button" class="btn btn-outline-primary w-100 mt-3" onclick="addField()">+ 添加新字段</button>
+                    <button type="button" class="btn btn-primary w-100 mt-3" onclick="submitFields()">保存配置</button>
+                </form>
+            </div>
+        </div>
+        
+        <script>
+            // 前端动态渲染逻辑 (复刻截图9的交互)
+            let fields = {{ fields_json|safe }};
+            
+            function renderFields() {
+                const con = document.getElementById('fieldsContainer');
+                con.innerHTML = '';
+                fields.forEach((f, i) => {
+                    let optHtml = '';
+                    if(f.type === 'select' || f.type === 'checkbox') {
+                        let tags = (f.options||[]).map(o => 
+                            `<span class="tag-item">${o}<span class="tag-close" onclick="delOpt(${i},'${o}')">&times;</span></span>`
+                        ).join('');
+                        optHtml = `
+                        <div class="col-md-5">
+                            <div class="tag-wrap" onclick="document.getElementById('in_${i}').focus()">
+                                ${tags}
+                                <input id="in_${i}" class="tag-input" placeholder="输入选项回车" onkeydown="addOpt(event,${i})">
+                            </div>
+                        </div>`;
+                    } else {
+                        optHtml = `<div class="col-md-5 text-muted small pt-2">该类型无需选项</div>`;
+                    }
+                    
+                    con.innerHTML += `
+                    <div class="row g-2 mb-3 align-items-center border-bottom pb-3">
+                        <div class="col-md-3">
+                            <input class="form-control" value="${f.label}" onchange="fields[${i}].label=this.value" placeholder="字段名">
+                        </div>
+                        <div class="col-md-2">
+                            <select class="form-select" onchange="fields[${i}].type=this.value;renderFields()">
+                                <option value="text" ${f.type=='text'?'selected':''}>文本</option>
+                                <option value="select" ${f.type=='select'?'selected':''}>单选</option>
+                                <option value="checkbox" ${f.type=='checkbox'?'selected':''}>多选</option>
+                            </select>
+                        </div>
+                        <div class="col-md-1 text-center">
+                             <div class="form-check form-switch d-inline-block">
+                                <input class="form-check-input" type="checkbox" ${f.search?'checked':''} onchange="fields[${i}].search=this.checked">
+                             </div>
+                        </div>
+                        ${optHtml}
+                        <div class="col-md-1 text-end"><button type="button" class="btn btn-sm btn-icon btn-light text-danger" onclick="delField(${i})"><i class="fas fa-trash"></i></button></div>
+                    </div>`;
+                });
+            }
+            
+            function addOpt(e, i) {
+                if(e.key === 'Enter') {
+                    e.preventDefault();
+                    let v = e.target.value.trim();
+                    if(v) {
+                        if(!fields[i].options) fields[i].options = [];
+                        fields[i].options.push(v);
+                        renderFields();
+                        setTimeout(()=>document.getElementById('in_'+i).focus(), 50);
+                    }
+                }
+            }
+            function delOpt(i, v) { fields[i].options = fields[i].options.filter(o=>o!==v); renderFields(); }
+            function addField() { fields.push({key: 'k'+Date.now(), label:'', type:'text', search:false}); renderFields(); }
+            function delField(i) { fields.splice(i,1); renderFields(); }
+            function submitFields() { document.getElementById('fieldsJson').value = JSON.stringify(fields); document.getElementById('fieldForm').submit(); }
+            
+            if(document.getElementById('fieldsContainer')) renderFields();
+        </script>
+
+        {% elif page == 'template' %}
+        <!-- 复刻截图1：自定义编辑器 -->
+        <div class="card">
+            <div class="card-header">消息模板</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <span class="badge bg-secondary cursor-pointer me-1" onclick="insertTxt('{onlineEmoji}')">{在线表情}</span>
+                    {% for f in fields %}
+                    <span class="badge bg-info cursor-pointer me-1" onclick="insertTxt('{'+'{{ f.label }}'+'}')">{ {{ f.label }} }</span>
+                    {% endfor %}
+                </div>
+                
+                <div class="editor-tb">
+                    <button class="editor-btn" onclick="fmt('bold')"><b>B</b></button>
+                    <button class="editor-btn" onclick="fmt('italic')"><i>I</i></button>
+                    <button class="editor-btn" onclick="promptLink()"><i class="fas fa-link"></i></button>
+                </div>
+                <div id="editor" class="editor-area" contenteditable="true">{{ template|safe }}</div>
+                
+                <form action="/save_template" method="post" onsubmit="document.getElementById('tplIn').value=document.getElementById('editor').innerHTML">
+                    <input type="hidden" name="template" id="tplIn">
+                    <button class="btn btn-primary mt-3">保存模板</button>
+                </form>
+            </div>
+        </div>
+        <script>
+            function fmt(cmd, val=null) { document.execCommand(cmd, false, val); }
+            function insertTxt(txt) { fmt('insertText', txt); }
+            function promptLink() { let u = prompt('URL:'); if(u) fmt('createLink', u); }
+        </script>
+        {% endif %}
+
+    </div>
+
+    <!-- 弹窗 (动态生成字段) -->
+    <div class="modal fade" id="userModal">
+        <div class="modal-dialog modal-lg">
+            <form action="/update_user" method="post" class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">用户资料</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <input type="hidden" name="tg_id" id="m_tg_id_hide"> <!-- 用于更新 -->
+                    <div class="mb-3">
+                        <label>TG ID</label>
+                        <input type="number" name="tg_id" id="m_tg_id" class="form-control" required>
+                    </div>
+                    
+                    <div id="modalFields"></div> <!-- JS注入 -->
+                    
+                </div>
+                <div class="modal-footer"><button class="btn btn-primary">保存</button></div>
+            </form>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 确保弹窗逻辑
+        const modalEl = document.getElementById('userModal');
+        const modal = new bootstrap.Modal(modalEl);
+        
+        // 每次打开时重新获取最新的字段配置 (在实际项目中这里可以用 fetch API 获取，这里简化直接用模板变量)
+        // 注意：因为 fields 变量在不同页面可能不存在，这里做一个简单的容错
+        const allFields = {{ fields_json|default('[]')|safe }};
+
+        function openModal() {
+            renderModalFields({});
+            document.getElementById('m_tg_id').value = '';
+            modal.show();
+        }
+
+        function editUser(id, tgId, profile) {
+            document.getElementById('m_tg_id').value = tgId;
+            renderModalFields(profile);
+            modal.show();
+        }
+
+        function renderModalFields(data) {
+            const con = document.getElementById('modalFields');
+            con.innerHTML = '';
+            allFields.forEach(f => {
+                let val = data[f.key] || '';
+                let inputHtml = '';
+                
+                if(f.type === 'select') {
+                    let opts = (f.options||[]).map(o => `<option value="${o}" ${o==val?'selected':''}>${o}</option>`).join('');
+                    inputHtml = `<select name="field_${f.key}" class="form-select"><option value="">请选择</option>${opts}</select>`;
+                } else if(f.type === 'checkbox') {
+                    inputHtml = '<div>';
+                    (f.options||[]).forEach(o => {
+                        let checked = (val.split(',').includes(o)) ? 'checked' : '';
+                        inputHtml += `<div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="field_${f.key}" value="${o}" ${checked}><label class="form-check-label">${o}</label></div>`;
+                    });
+                    inputHtml += '</div>';
+                } else {
+                    inputHtml = `<input name="field_${f.key}" class="form-control" value="${val}">`;
+                }
+                
+                con.innerHTML += `<div class="mb-3"><label>${f.label}</label>${inputHtml}</div>`;
+            });
+        }
+    </script>
+    {% endif %}
+</body>
+</html>
