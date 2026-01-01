@@ -24,7 +24,7 @@ def page_users():
     if q: query = query.filter(User.profile_data.contains(q))
     users = query.order_by(User.id.desc()).all()
     fields = get_conf('fields', DEFAULT_FIELDS)
-    return render_template('admin_base.html', page='users', users=users, fields=fields, q=q)
+    return render_template('base.html', page='users', users=users, fields=fields, q=q)
 
 @web_bp.route('/fields')
 def page_fields():
