@@ -7,11 +7,6 @@ def get_conf(key, default):
 
 def set_conf(key, value):
     c = Config.query.filter_by(key=key).first()
-    if not c:
-        c = Config(key=key)
-        db.session.add(c)
-    if isinstance(value, (dict, list)):
-        c.value = json.dumps(value, ensure_ascii=False)
-    else:
-        c.value = str(value)
+    if not c: db.session.add(Config(key=key, value=json.dumps(value, ensure_ascii=False)))
+    else: c.value = json.dumps(value, ensure_ascii=False)
     db.session.commit()
