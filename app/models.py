@@ -11,7 +11,7 @@ class User(db.Model):
     __tablename__ = 'users_v1'
     id = db.Column(db.Integer, primary_key=True)
     tg_id = db.Column(db.BigInteger, unique=True, index=True)
-    profile_data = db.Column(db.Text, default='{}') # JSON 存储资料
+    profile_data = db.Column(db.Text, default='{}') 
     expiration_date = db.Column(db.DateTime)
     points = db.Column(db.Integer, default=0)
     checkin_time = db.Column(db.DateTime)
@@ -20,6 +20,13 @@ class User(db.Model):
     @property
     def is_expired(self):
         return self.expiration_date and datetime.now() > self.expiration_date
+
+class Chat(db.Model):
+    """🆕 新增：聊天会话表 (用于存储发现的群和频道)"""
+    __tablename__ = 'chats'
+    id = db.Column(db.BigInteger, primary_key=True) # Telegram Chat ID
+    title = db.Column(db.String(255))               # 群名/频道名
+    type = db.Column(db.String(50))                 # group, supergroup, channel
 
 # --- 默认配置 ---
 DEFAULT_FIELDS = [
@@ -31,6 +38,7 @@ DEFAULT_FIELDS = [
 DEFAULT_SYSTEM = {
     # --- 打卡配置 ---
     "checkin_open": True,
+    "checkin_chat_id": "",       # 🆕 绑定的打卡群ID
     "checkin_cmd": "打卡",
     "online_emoji": "🟢",
     "offline_emoji": "🔴",
@@ -52,5 +60,5 @@ DEFAULT_SYSTEM = {
     "template": "<b>{onlineEmoji} {昵称}</b> | {地区}",
     "page_size": 10,
     "online_delay": 0,
-    "push_channel_id": ""
+    "push_channel_id": ""        # 绑定的推送频道ID
 }
