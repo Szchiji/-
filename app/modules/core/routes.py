@@ -1,23 +1,24 @@
-from flask import Blueprint, render_template, request, redirect, session, jsonify
+from flask import render_template, request, redirect, session, jsonify
 from app import db, global_bot, global_loop
 from app.models import User, DEFAULT_FIELDS, DEFAULT_SYSTEM
 from app.services import get_conf, set_conf
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
-import os, jwt, time, json, asyncio, re, threading
+from . import core_bp
+import os, jwt, time, json, asyncio, re
 from datetime import datetime, timedelta
 
-# 创建模块蓝图
-core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
+# =======================
+# 🌐 网页路由部分
+# =======================
 
-# --- 网页路由 ---
-
-@core_bp.route('/')
+@core_bp.route('/core')
+@core_bp.route('/core/')
 def index():
     if not session.get('logged_in'): return render_template('base.html', page='login')
     return redirect('/core/users')
 
-@core_bp.route('/users')
+@core_bp.route('/core/users')
 def page_users():
     if not session.get('logged_in'): return redirect('/core')
     q = request.args.get('q', '')
@@ -27,35 +28,37 @@ def page_users():
     fields = get_conf('fields', DEFAULT_FIELDS)
     return render_template('users.html', page='users', users=users, fields=fields, q=q)
 
-@core_bp.route('/fields')
+@core_bp.route('/core/fields')
 def page_fields():
     if not session.get('logged_in'): return redirect('/core')
     fields = get_conf('fields', DEFAULT_FIELDS)
     return render_template('fields.html', page='fields', fields=fields, fields_json=json.dumps(fields))
 
-@core_bp.route('/system')
+@core_bp.route('/core/system')
 def page_system():
     if not session.get('logged_in'): return redirect('/core')
     sys = get_conf('system', DEFAULT_SYSTEM)
     fields = get_conf('fields', DEFAULT_FIELDS)
     return render_template('system.html', page='system', sys=sys, fields=fields)
 
-@core_bp.route('/magic_login')
+@core_bp.route('/core/magic_login')
 def magic_login():
     token = request.args.get('token')
-    if token and jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=['HS256']).get('uid') == int(os.getenv('ADMIN_ID')):
+    if token and jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=['HS256']).get('uid') == int(os.getenv('ADMIN_ID', 0)):
         session['logged_in'] = True
         return redirect('/core/users')
     return "Link Invalid", 403
 
-@core_bp.route('/logout')
+@core_bp.route('/core/logout')
 def logout(): session.clear(); return redirect('/core')
 
-# --- API 接口 ---
+# =======================
+# 📡 API 接口部分
+# =======================
 
-@core_bp.route('/api/save_user', methods=['POST'])
+@core_bp.route('/core/api/save_user', methods=['POST'])
 def api_save_user():
-    if not session.get('logged_in'): return jsonify({"status":"err", "msg":"403"}), 403
+    if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     data = request.json
     try:
         tg_id = int(data.get('tg_id'))
@@ -73,20 +76,20 @@ def api_save_user():
         return jsonify({"status": "ok"})
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
 
-@core_bp.route('/api/delete_user', methods=['POST'])
+@core_bp.route('/core/api/delete_user', methods=['POST'])
 def api_delete_user():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     User.query.filter_by(id=request.json.get('id')).delete()
     db.session.commit()
     return jsonify({"status": "ok"})
 
-@core_bp.route('/api/save_fields', methods=['POST'])
+@core_bp.route('/core/api/save_fields', methods=['POST'])
 def api_save_fields():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     set_conf('fields', request.json)
     return jsonify({"status": "ok"})
 
-@core_bp.route('/api/save_system', methods=['POST'])
+@core_bp.route('/core/api/save_system', methods=['POST'])
 def api_save_system():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     curr = get_conf('system', DEFAULT_SYSTEM)
@@ -94,10 +97,9 @@ def api_save_system():
     set_conf('system', curr)
     return jsonify({"status": "ok"})
 
-@core_bp.route('/api/push_user', methods=['POST'])
+@core_bp.route('/core/api/push_user', methods=['POST'])
 def api_push_user():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
-    # 延迟导入防止循环引用
     import app
     
     uid = request.json.get('id')
@@ -107,7 +109,6 @@ def api_push_user():
     
     if not channel: return jsonify({"status": "err", "msg": "未设置推送频道ID"})
     
-    # 简单的模板替换
     tpl = sys.get('template', '')
     fields_map = {f['key']: f['label'] for f in get_conf('fields', DEFAULT_FIELDS)}
     try:
@@ -115,7 +116,7 @@ def api_push_user():
         line = tpl.replace("{onlineEmoji}", sys.get('online_emoji',''))
         for k, v in data.items():
             if k in fields_map: line = line.replace(f"{{{fields_map[k]}}}", str(v))
-        line = re.sub(r'\{.*?\}', '', line) # 清理未匹配变量
+        line = re.sub(r'\{.*?\}', '', line)
         
         if app.global_bot and app.global_loop:
             asyncio.run_coroutine_threadsafe(
@@ -126,8 +127,9 @@ def api_push_user():
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
     return jsonify({"status": "err", "msg": "Bot未连接"})
 
-
-# --- 机器人逻辑 ---
+# =======================
+# 🤖 机器人逻辑部分
+# =======================
 
 async def bot_start(update: Update, context):
     if update.effective_user.id == int(os.getenv('ADMIN_ID', 0)):
@@ -141,15 +143,16 @@ async def bot_handler(update: Update, context):
     user = update.effective_user
     sys_conf = get_conf('system', DEFAULT_SYSTEM)
 
-    # 1. 认证用户发言点赞
+    # 1. 认证用户发言自动点赞
     if sys_conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
+            # 查库确认是认证用户
             if User.query.filter_by(tg_id=user.id).first():
                 try: await update.message.set_reaction(sys_conf.get('like_emoji', '❤️'))
                 except: pass
 
-    # 2. 打卡
+    # 2. 打卡逻辑
     if text == sys_conf.get('checkin_cmd', '打卡'):
         if not sys_conf.get('checkin_open'): return
         from app import create_app
@@ -157,13 +160,14 @@ async def bot_handler(update: Update, context):
             u = User.query.filter_by(tg_id=user.id).first()
             delay = int(sys_conf.get('checkin_del_time', 30))
             
-            if not u: # 未认证
+            # 未认证
+            if not u:
                 msg = await update.message.reply_html(sys_conf.get('msg_not_registered'))
                 context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=msg)
                 return
 
+            # 重复打卡 (同日期)
             now = datetime.now()
-            # 简单去重：同日期算重复
             if u.checkin_time and u.checkin_time.date() == now.date():
                 msg = await update.message.reply_html(sys_conf.get('msg_repeat_checkin'))
             else:
@@ -172,22 +176,24 @@ async def bot_handler(update: Update, context):
                 db.session.commit()
                 msg = await update.message.reply_html(sys_conf.get('msg_checkin_success'))
             
-            # 删除用户指令和回复
+            # 自动删除
             try: context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=update.message)
             except: pass
             context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=msg)
 
-    # 3. 查询
+    # 3. 查询逻辑 (仅今日)
     if text == sys_conf.get('query_cmd', '查询'):
         if not sys_conf.get('query_open'): return
         from app import create_app
         with create_app().app_context():
+            # 获取今天0点时间
             today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            # 筛选今天打卡且在线的用户
             users = User.query.filter(User.checkin_time >= today_start, User.online == True).all()
             
             delay = int(sys_conf.get('query_del_time', 30))
             if not users:
-                msg = await update.message.reply_text("😢 今日暂无打卡")
+                msg = await update.message.reply_text("😢 今日暂无认证用户打卡")
             else:
                 header = sys_conf.get('msg_query_header', '')
                 tpl = sys_conf.get('template', '')
