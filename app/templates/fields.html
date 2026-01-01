@@ -1,62 +1,36 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-    <div class="card-header">
-        <span>字段构建器</span>
-        <button class="btn btn-sm btn-success" onclick="addField()">+ 新增字段</button>
-    </div>
+    <div class="card-header"><span>字段构建器</span><button class="btn btn-sm btn-success" onclick="addField()">+ 新增字段</button></div>
     <div class="card-body">
         <div id="fieldsCon"></div>
-        <button class="btn btn-primary w-100 mt-4" onclick="save()">保存所有配置</button>
+        <button class="btn btn-primary w-100 mt-4" onclick="save()">保存配置</button>
     </div>
 </div>
-
 <script>
-    let fields = {{ fields|tojson }};
+    let fields = {{ fields_json|safe }};
     function render() {
-        const con = document.getElementById('fieldsCon');
-        con.innerHTML = '';
+        const con = document.getElementById('fieldsCon'); con.innerHTML = '';
         fields.forEach((f,i) => {
             let optHtml = '';
             if(f.type !== 'text') {
-                let tags = (f.options||[]).map(o=>`<span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25 me-1 mb-1" style="font-weight:normal">${o} <i class="fa-solid fa-times ms-1" style="cursor:pointer" onclick="delOpt(${i},'${o}')"></i></span>`).join('');
-                optHtml = `<div class="mt-2 p-2 border rounded bg-light">${tags}<input class="border-0 bg-transparent outline-0 ms-1" style="width:120px" placeholder="输入回车添加..." onkeydown="addOpt(event,${i})"></div>`;
+                let tags = (f.options||[]).map(o=>`<span class="badge bg-light text-dark border me-1">${o} <i class="fa-solid fa-times ms-1" style="cursor:pointer" onclick="delOpt(${i},'${o}')"></i></span>`).join('');
+                optHtml = `<div class="mt-2 p-2 border rounded bg-light">${tags}<input class="border-0 bg-transparent outline-0 ms-2" placeholder="回车添加..." onkeydown="addOpt(event,${i})"></div>`;
             }
-            
             con.innerHTML += `
-            <div class="card mb-3 border shadow-sm">
-                <div class="card-body p-3">
-                    <div class="row g-2 align-items-center">
-                        <div class="col-md-3">
-                            <label class="small text-muted">显示名称</label>
-                            <input class="form-control" value="${f.label}" onchange="fields[${i}].label=this.value">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="small text-muted">字段Key (英文)</label>
-                            <input class="form-control" value="${f.key}" onchange="fields[${i}].key=this.value">
-                        </div>
-                        <div class="col-md-2">
-                            <label class="small text-muted">类型</label>
-                            <select class="form-select" onchange="fields[${i}].type=this.value;render()">
-                                <option value="text" ${f.type=='text'?'selected':''}>文本</option>
-                                <option value="select" ${f.type=='select'?'selected':''}>单选</option>
-                                <option value="checkbox" ${f.type=='checkbox'?'selected':''}>多选</option>
-                            </select>
-                        </div>
-                        <div class="col-md-1 text-center pt-4">
-                            <button class="btn btn-outline-danger btn-sm rounded-circle" onclick="delField(${i})"><i class="fa-solid fa-trash"></i></button>
-                        </div>
-                        <div class="col-12">${optHtml}</div>
-                    </div>
-                </div>
-            </div>`;
+            <div class="card mb-3 border shadow-sm"><div class="card-body p-3"><div class="row g-2 align-items-center">
+                <div class="col-md-3"><label class="small text-muted">显示名称</label><input class="form-control" value="${f.label}" onchange="fields[${i}].label=this.value"></div>
+                <div class="col-md-3"><label class="small text-muted">Key</label><input class="form-control" value="${f.key}" onchange="fields[${i}].key=this.value"></div>
+                <div class="col-md-2"><label class="small text-muted">类型</label><select class="form-select" onchange="fields[${i}].type=this.value;render()"><option value="text" ${f.type=='text'?'selected':''}>文本</option><option value="select" ${f.type=='select'?'selected':''}>单选</option><option value="checkbox" ${f.type=='checkbox'?'selected':''}>多选</option></select></div>
+                <div class="col-md-1 text-center pt-4"><button class="btn btn-outline-danger btn-sm rounded-circle" onclick="fields.splice(${i},1);render()"><i class="fa-solid fa-trash"></i></button></div>
+                <div class="col-12">${optHtml}</div>
+            </div></div></div>`;
         });
     }
-    function addOpt(e,i) { if(e.key==='Enter'){ e.preventDefault(); let v=e.target.value.trim(); if(v){ if(!fields[i].options) fields[i].options=[]; fields[i].options.push(v); render(); }}}
-    function delOpt(i,v) { fields[i].options = fields[i].options.filter(o=>o!==v); render(); }
-    function addField() { fields.push({key:'k'+Date.now(), label:'', type:'text'}); render(); }
-    function delField(i) { fields.splice(i,1); render(); }
-    function save() { fetch('/api/save_fields', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(fields)}).then(()=>alert('保存成功')); }
+    function addOpt(e,i){if(e.key==='Enter'){e.preventDefault();if(e.target.value){if(!fields[i].options)fields[i].options=[];fields[i].options.push(e.target.value);render();}}}
+    function delOpt(i,v){fields[i].options=fields[i].options.filter(o=>o!==v);render();}
+    function addField(){fields.push({key:'k'+Date.now(),label:'',type:'text'});render();}
+    function save(){fetch('/api/save_fields',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(fields)}).then(()=>alert('保存成功'));}
     render();
 </script>
 {% endblock %}
