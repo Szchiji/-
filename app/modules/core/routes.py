@@ -1,8 +1,8 @@
 from flask import Blueprint, render_template, request, redirect, session, jsonify, g
 from app import db
 from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram import Update, ChatMember, ChatMemberUpdated
+from telegram.ext import Application, CommandHandler, MessageHandler, ChatMemberHandler, filters
 import os, jwt, time, json, asyncio, re
 from datetime import datetime, timedelta
 
@@ -15,8 +15,7 @@ def inject_context():
     if session.get('logged_in'):
         data['all_groups'] = BotGroup.query.order_by(BotGroup.updated_at.desc()).all()
     gid = session.get('current_group_id')
-    if gid:
-        data['current_group'] = BotGroup.query.get(gid)
+    if gid: data['current_group'] = BotGroup.query.get(gid)
     return data
 
 # --- 辅助函数 ---
@@ -24,17 +23,14 @@ def safe_int(val, default=30):
     try:
         if val is None or str(val).strip() == "": return default
         return int(val)
-    except:
-        return default
+    except: return default
 
 def get_group_conf(group):
     conf = DEFAULT_SYSTEM.copy()
     if group and group.config:
         try:
             c = json.loads(group.config)
-            # 兼容性修复：防止多层嵌套
-            if 'config' in c and isinstance(c['config'], dict):
-                c = c['config']
+            if 'config' in c and isinstance(c['config'], dict): c = c['config']
             for k, v in c.items():
                 if v is not None: conf[k] = v
         except: pass
@@ -47,12 +43,10 @@ def get_group_fields(group):
     return DEFAULT_FIELDS
 
 # =======================
-# 🌐 网页路由
+# 🌐 网页路由 (保持不变)
 # =======================
-
 @core_bp.route('/')
-def index():
-    return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
+def index(): return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
 
 @core_bp.route('/select_group')
 def page_select_group():
@@ -66,10 +60,7 @@ def page_dashboard(gid):
     if not session.get('logged_in'): return redirect('/core')
     session['current_group_id'] = gid
     group = BotGroup.query.get_or_404(gid)
-    stats = {
-        'users': GroupUser.query.filter_by(group_id=gid).count(),
-        'online': GroupUser.query.filter_by(group_id=gid, online=True).count()
-    }
+    stats = {'users': GroupUser.query.filter_by(group_id=gid).count(), 'online': GroupUser.query.filter_by(group_id=gid, online=True).count()}
     return render_template('dashboard.html', page='dashboard', group=group, stats=stats)
 
 @core_bp.route('/group/<int:gid>/users')
@@ -102,26 +93,20 @@ def page_settings(gid):
 # =======================
 # 📡 API 路由
 # =======================
-
 @core_bp.route('/api/save_settings', methods=['POST'])
 def api_save_settings():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
-    
     req_data = request.json
     gid = req_data.get('group_id') or session.get('current_group_id')
     group = BotGroup.query.get(gid)
-    
     if group:
-        if 'config' in req_data:
-            real_config = req_data['config']
+        if 'config' in req_data: real_config = req_data['config']
         else:
             real_config = req_data.copy()
             if 'group_id' in real_config: del real_config['group_id']
-
         clean = {k: v for k, v in real_config.items() if v is not None}
         group.config = json.dumps(clean, ensure_ascii=False)
         db.session.commit()
-        
     return jsonify({"status": "ok"})
 
 @core_bp.route('/api/save_fields', methods=['POST'])
@@ -129,11 +114,9 @@ def api_save_fields():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     gid = session.get('current_group_id')
     group = BotGroup.query.get(gid)
-    
     if group:
         data = request.json
-        if isinstance(data, dict) and 'fields' in data:
-            data = data['fields']
+        if isinstance(data, dict) and 'fields' in data: data = data['fields']
         group.fields_config = json.dumps(data, ensure_ascii=False)
         db.session.commit()
     return jsonify({"status": "ok"})
@@ -143,7 +126,6 @@ def api_save_user():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     data = request.json
     gid = data.get('group_id') or session.get('current_group_id')
-    
     try:
         tg_id = int(data.get('tg_id'))
         user = GroupUser.query.filter_by(group_id=gid, tg_id=tg_id).first()
@@ -151,13 +133,11 @@ def api_save_user():
             user = GroupUser(group_id=gid, tg_id=tg_id)
             db.session.add(user)
         user.profile_data = json.dumps(data.get('profile', {}), ensure_ascii=False)
-        
         days = int(data.get('add_days', 0))
         if days:
             now = datetime.now()
             base = user.expiration_date if (user.expiration_date and user.expiration_date > now) else now
             user.expiration_date = base + timedelta(days=days)
-            
         db.session.commit()
         return jsonify({"status": "ok"})
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
@@ -175,30 +155,21 @@ def api_push_user():
     import app
     gid = session.get('current_group_id')
     uid = request.json.get('id')
-    
     group = BotGroup.query.get(gid)
     user = GroupUser.query.get(uid)
     conf = get_group_conf(group)
-    
     channel_id = conf.get('push_channel_id')
     if not channel_id: return jsonify({"status": "err", "msg": "未配置推送频道"})
-    
     tpl = conf.get('push_template', '{昵称} | {地区}')
     fields_map = {f['key']: f['label'] for f in get_group_fields(group)}
-    
     try:
         data = json.loads(user.profile_data)
         line = tpl.replace("{onlineEmoji}", conf.get('online_emoji',''))
-        for k, l in fields_map.items():
-            line = line.replace(f"{{{l}}}", str(data.get(k,'')))
+        for k, l in fields_map.items(): line = line.replace(f"{{{l}}}", str(data.get(k,'')))
         line = line.replace("{tg_id}", str(user.tg_id))
         line = re.sub(r'\{.*?\}', '', line)
-        
         if app.global_bot and app.global_loop:
-            asyncio.run_coroutine_threadsafe(
-                app.global_bot.send_message(chat_id=channel_id, text=line, parse_mode='HTML'),
-                app.global_loop
-            )
+            asyncio.run_coroutine_threadsafe(app.global_bot.send_message(chat_id=channel_id, text=line, parse_mode='HTML'), app.global_loop)
             return jsonify({"status": "ok", "msg": "✅ 已推送"})
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
     return jsonify({"status": "err", "msg": "Bot未连接"})
@@ -226,11 +197,11 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 🤖 机器人逻辑
+# 🤖 机器人逻辑 (终极修复版)
 # =======================
 
-async def get_group_info(chat):
-    """纯数据查询，防止 DetachedInstanceError"""
+async def record_group_update(chat):
+    """记录群组/频道信息的通用函数"""
     if chat.type not in ['group', 'supergroup', 'channel']: return None
     from app import create_app
     with create_app().app_context():
@@ -239,10 +210,11 @@ async def get_group_info(chat):
             bg = BotGroup(chat_id=str(chat.id), is_active=False, type=chat.type)
             bg.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
             db.session.add(bg)
+            print(f"🆕 发现新{chat.type}: {chat.title} ({chat.id})")
         
         if bg.title != (chat.title or chat.username):
             bg.title = chat.title or chat.username
-            
+        
         bg.updated_at = datetime.now()
         db.session.commit()
         return {'id': bg.id, 'is_active': bg.is_active, 'config': bg.config, 'fields_config': bg.fields_config}
@@ -254,38 +226,50 @@ async def bot_start(update: Update, context):
         url = f"{base}/core/magic_login?token={token}"
         await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
 
+# 🆕 新增：监听机器人被加入群/频道的事件
+async def chat_member_handler(update: Update, context):
+    chat = update.effective_chat
+    # 只要由于状态改变（比如被拉入频道），就立即记录
+    await record_group_update(chat)
+
 async def bot_handler(update: Update, context):
     msg = update.message or update.channel_post
     if not msg: return
     
-    g_info = await get_group_info(update.effective_chat)
-    if not g_info or not g_info['is_active']: return
+    # 1. 发现逻辑
+    g_info = await record_group_update(update.effective_chat)
+    if not g_info: return
 
+    # 2. 准备配置数据
     class MockGroup:
         def __init__(self, c, f): self.config=c; self.fields_config=f
     mock_g = MockGroup(g_info['config'], g_info['fields_config'])
-    
     conf = get_group_conf(mock_g)
-    fields = get_group_fields(mock_g)
     
-    text = msg.text.strip() if msg.text else ""
+    if not g_info['is_active']: return
+
+    # --- 频道逻辑结束点 ---
+    # 如果是频道消息（没有 user），则到此为止（只负责发现和记录）
+    if not update.effective_user: return
+    
+    # --- 群组互动逻辑 ---
     user = update.effective_user
+    text = msg.text.strip() if msg.text else ""
     gid = g_info['id']
 
-    if not user: return 
-
-    # 自动点赞
+    # 3. 自动点赞 (移到最前，确保优先触发)
     if conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
-            uid = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
-            if uid:
+            # 只要该用户存在于本群的 GroupUser 表中，就点赞
+            exists = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
+            if exists:
                 try: await msg.set_reaction(conf.get('like_emoji', '❤️'))
                 except: pass
 
-    # 打卡
-    cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
-    if text in cmds:
+    # 4. 打卡逻辑
+    checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
+    if text in checkin_cmds:
         if not conf.get('checkin_open'): return
         from app import create_app
         with create_app().app_context():
@@ -306,7 +290,7 @@ async def bot_handler(update: Update, context):
             except: pass
             context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=reply)
 
-    # 查询
+    # 5. 查询逻辑 (允许任何人查询)
     q_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
     matched = next((c for c in q_cmds if text.startswith(c)), None)
     
@@ -329,7 +313,7 @@ async def bot_handler(update: Update, context):
             else:
                 header = conf.get('msg_query_header', '')
                 tpl = conf.get('template', '')
-                f_map = {f['key']: f['label'] for f in fields}
+                f_map = {f['key']: f['label'] for f in get_group_fields(mock_g)}
                 lines = []
                 for u in users:
                     try:
@@ -350,8 +334,13 @@ async def run_bot():
     app_bot = Application.builder().token(token).build()
     app.global_bot = app_bot.bot
     app.global_loop = asyncio.get_running_loop()
+    
+    # 注册处理器
     app_bot.add_handler(CommandHandler("start", bot_start))
+    # 🆕 监听成员变动 (发现频道/群组的关键)
+    app_bot.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
     app_bot.add_handler(MessageHandler(filters.ALL, bot_handler))
+    
     await app_bot.initialize()
     await app_bot.start()
     await app_bot.updater.start_polling()
