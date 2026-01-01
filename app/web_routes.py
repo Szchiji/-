@@ -13,7 +13,7 @@ web_bp = Blueprint('web', __name__)
 
 @web_bp.route('/')
 def index():
-    if not session.get('logged_in'): return render_template('admin_base.html', page='login')
+    if not session.get('logged_in'): return render_template('base.html', page='login')
     return redirect('/users')
 
 @web_bp.route('/users')
@@ -24,26 +24,30 @@ def page_users():
     if q: query = query.filter(User.profile_data.contains(q))
     users = query.order_by(User.id.desc()).all()
     fields = get_conf('fields', DEFAULT_FIELDS)
-    return render_template('base.html', page='users', users=users, fields=fields, q=q)
+    # ⚠️ 修正：直接渲染 users.html
+    return render_template('users.html', page='users', users=users, fields=fields, q=q)
 
 @web_bp.route('/fields')
 def page_fields():
     if not session.get('logged_in'): return redirect('/')
     fields = get_conf('fields', DEFAULT_FIELDS)
-    return render_template('admin_base.html', page='fields', fields=fields, fields_json=json.dumps(fields))
+    # ⚠️ 修正：直接渲染 fields.html
+    return render_template('fields.html', page='fields', fields=fields, fields_json=json.dumps(fields))
 
 @web_bp.route('/template')
 def page_template():
     if not session.get('logged_in'): return redirect('/')
     sys = get_conf('system', DEFAULT_SYSTEM)
     fields = get_conf('fields', DEFAULT_FIELDS)
-    return render_template('admin_base.html', page='template', template_str=sys.get('template',''), fields=fields)
+    # ⚠️ 修正：渲染 system.html (复用模板编辑功能)
+    return render_template('system.html', page='template', template_str=sys.get('template',''), fields=fields, sys=sys)
 
 @web_bp.route('/system')
 def page_system():
     if not session.get('logged_in'): return redirect('/')
     sys = get_conf('system', DEFAULT_SYSTEM)
-    return render_template('admin_base.html', page='system', sys=sys)
+    fields = get_conf('fields', DEFAULT_FIELDS)
+    return render_template('system.html', page='system', sys=sys, fields=fields)
 
 # --- API ---
 @web_bp.route('/api/save_user', methods=['POST'])
@@ -97,9 +101,7 @@ def api_save_system():
 
 @web_bp.route('/api/push_user', methods=['POST'])
 def api_push_user():
-    """推送功能 (截图8)"""
     if not session.get('logged_in'): return "403", 403
-    # 需要在 app/__init__.py 里定义 global_bot
     from . import global_bot, global_loop
     
     uid = request.json.get('id')
@@ -124,7 +126,7 @@ def api_push_user():
                 global_bot.send_message(chat_id=channel, text=line, parse_mode='HTML'),
                 global_loop
             )
-            return jsonify({"status": "ok"})
+            return jsonify({"status": "ok", "msg": "已推送"})
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
     return jsonify({"status": "err", "msg": "Bot未连接"})
 
