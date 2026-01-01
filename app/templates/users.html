@@ -3,70 +3,48 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4 class="fw-bold m-0">认证用户列表</h4>
     <div class="d-flex gap-2">
-        <div class="input-group">
-            <span class="input-group-text bg-white"><i class="fa-solid fa-search text-muted"></i></span>
-            <input type="text" class="form-control" placeholder="搜索用户..." value="{{ q }}" onchange="location.href='?q='+this.value">
-        </div>
+        <input type="text" class="form-control" placeholder="搜索..." value="{{ q }}" onchange="location.href='?q='+this.value">
         <button class="btn btn-primary" onclick="openModal()"><i class="fa-solid fa-plus me-1"></i> 添加</button>
     </div>
 </div>
 
 <div class="card">
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-            <thead class="bg-light">
-                <tr><th class="ps-4">TG ID</th><th>预览信息</th><th>状态</th><th class="text-end pe-4">操作</th></tr>
-            </thead>
-            <tbody>
-                {% for u in users %}
-                <tr>
-                    <td class="ps-4 fw-bold text-primary">{{ u.tg_id }}</td>
-                    <td>
-                        {% set d = u.profile_data | from_json %}
-                        {% for k, v in d.items() %}
-                            {% if v and loop.index <= 4 %}
-                            <span class="badge bg-light text-dark border fw-normal me-1">{{ v }}</span>
-                            {% endif %}
-                        {% endfor %}
-                    </td>
-                    <td>
-                        {% if u.online %}<span class="badge bg-success">在线</span>
-                        {% else %}<span class="badge bg-secondary">离线</span>{% endif %}
-                    </td>
-                    <td class="text-end pe-4">
-                        <button class="btn btn-sm btn-info text-white me-1" onclick="pushUser({{ u.id }})">推送</button>
-                        <button class="btn btn-sm btn-outline-primary me-1" onclick='editUser({{ u.tg_id }}, {{ u.profile_data|tojson }})'>编辑</button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="delUser({{ u.id }})">删除</button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+    <table class="table table-hover align-middle mb-0">
+        <thead class="bg-light"><tr><th class="ps-4">TG ID</th><th>预览</th><th>状态</th><th class="text-end pe-4">操作</th></tr></thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td class="ps-4 fw-bold text-primary">{{ u.tg_id }}</td>
+                <td>
+                    {% set d = u.profile_data | from_json %}
+                    {% for k, v in d.items() %}
+                        {% if v and loop.index <= 4 %}<span class="badge bg-light text-dark border fw-normal me-1">{{ v }}</span>{% endif %}
+                    {% endfor %}
+                </td>
+                <td>{% if u.online %}<span class="badge bg-success">在线</span>{% else %}<span class="badge bg-secondary">离线</span>{% endif %}</td>
+                <td class="text-end pe-4">
+                    <button class="btn btn-sm btn-info text-white me-1" onclick="pushUser({{ u.id }})">推送</button>
+                    <button class="btn btn-sm btn-outline-primary me-1" onclick='editUser({{ u.tg_id }}, {{ u.profile_data|tojson }})'>编辑</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="delUser({{ u.id }})">删除</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 
 <!-- 用户弹窗 -->
 <div class="modal fade" id="userModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <form class="modal-content" id="userForm">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold">用户资料</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
+            <div class="modal-header"><h5 class="modal-title fw-bold">用户资料</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
             <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label text-muted small fw-bold">TG ID (必填)</label>
-                    <input type="number" name="tg_id" class="form-control" required>
-                </div>
-                <!-- 动态字段注入点 -->
+                <div class="mb-3"><label class="form-label text-muted small fw-bold">TG ID</label><input type="number" name="tg_id" class="form-control" required></div>
                 <div id="modalFields" class="row g-3"></div>
                 <hr class="my-4">
-                <div class="row">
-                    <div class="col"><label class="form-label text-muted small fw-bold">加天数</label><input type="number" name="add_days" class="form-control" value="0"></div>
-                </div>
+                <div class="row"><div class="col"><label class="form-label text-muted small fw-bold">加天数</label><input type="number" name="add_days" class="form-control" value="0"></div></div>
             </div>
             <div class="modal-footer bg-light">
-                <button type="button" class="btn btn-link text-muted text-decoration-none" data-bs-dismiss="modal">取消</button>
                 <button type="button" class="btn btn-primary px-4" onclick="saveUser()">保存</button>
             </div>
         </form>
@@ -76,10 +54,8 @@
 <script>
     const modal = new bootstrap.Modal(document.getElementById('userModal'));
     const fields = {{ fields|tojson }};
-
     function renderFields(data) {
-        const con = document.getElementById('modalFields');
-        con.innerHTML = '';
+        const con = document.getElementById('modalFields'); con.innerHTML = '';
         fields.forEach(f => {
             let val = data[f.key] || '';
             let html = '';
@@ -91,44 +67,23 @@
                 (f.options||[]).forEach(o => {
                     let chk = (val.split(',').includes(o)) ? 'checked' : '';
                     html += `<div class="form-check"><input class="form-check-input" type="checkbox" name="${f.key}" value="${o}" ${chk}><label class="form-check-label">${o}</label></div>`;
-                });
-                html += '</div>';
-            } else {
-                html = `<input type="text" name="${f.key}" class="form-control" value="${val}">`;
-            }
+                }); html += '</div>';
+            } else { html = `<input type="text" name="${f.key}" class="form-control" value="${val}">`; }
             con.innerHTML += `<div class="col-md-6"><label class="form-label small text-muted">${f.label}</label>${html}</div>`;
         });
     }
-
     function openModal() { document.getElementById('userForm').reset(); renderFields({}); modal.show(); }
-    function editUser(tgId, data) {
-        document.getElementById('userForm').reset();
-        document.querySelector('[name=tg_id]').value = tgId;
-        renderFields(data);
-        modal.show();
-    }
-    
+    function editUser(tgId, data) { document.getElementById('userForm').reset(); document.querySelector('[name=tg_id]').value = tgId; renderFields(data); modal.show(); }
     function saveUser() {
-        const formData = new FormData(document.getElementById('userForm'));
-        const data = { tg_id: formData.get('tg_id'), add_days: formData.get('add_days'), profile: {} };
+        const fd = new FormData(document.getElementById('userForm'));
+        const data = { tg_id: fd.get('tg_id'), add_days: fd.get('add_days'), profile: {} };
         fields.forEach(f => {
-            if(f.type==='checkbox') {
-                const vals = [];
-                document.querySelectorAll(`input[name="${f.key}"]:checked`).forEach(c => vals.push(c.value));
-                data.profile[f.key] = vals.join(',');
-            } else {
-                data.profile[f.key] = formData.get(f.key);
-            }
+            if(f.type==='checkbox') { const v=[]; document.querySelectorAll(`[name="${f.key}"]:checked`).forEach(c=>v.push(c.value)); data.profile[f.key]=v.join(','); }
+            else { data.profile[f.key] = fd.get(f.key); }
         });
         fetch('/api/save_user', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}).then(()=>location.reload());
     }
-    
-    function delUser(id) {
-        if(confirm('确定删除此用户？')) fetch('/api/delete_user', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id})}).then(()=>location.reload());
-    }
-    
-    function pushUser(id) {
-        if(confirm('推送到频道？')) fetch('/api/push_user', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id})}).then(r=>r.json()).then(d=>alert(d.msg));
-    }
+    function delUser(id) { if(confirm('删除？')) fetch('/api/delete_user', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id})}).then(()=>location.reload()); }
+    function pushUser(id) { if(confirm('推送？')) fetch('/api/push_user', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id})}).then(r=>r.json()).then(d=>alert(d.msg)); }
 </script>
 {% endblock %}
