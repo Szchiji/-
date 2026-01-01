@@ -9,11 +9,12 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # --- 配置部分 ---
+# Railway 的 DATABASE_URL 默认为 postgres://，需要修正为 postgresql:// 才能被 SQLAlchemy 识别
 DB_URI = os.getenv('DATABASE_URL', 'sqlite:///bot.db')
-if DB_URI.startswith("postgres://"):
+if DB_URI and DB_URI.startswith("postgres://"):
     DB_URI = DB_URI.replace("postgres://", "postgresql://", 1)
 
-TOKEN = os.getenv('BOT_TOKEN')
+TOKEN = os.getenv('TOKEN')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '123456')
 PORT = int(os.getenv('PORT', 5000))
 
@@ -165,9 +166,9 @@ async def my_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date = user.expiration_date.strftime('%Y-%m-%d') if user.expiration_date else "无"
         await update.message.reply_text(f"ID: {user.tg_id}\n等级: {user.membership_level}\n状态: {status}\n到期: {date}\n积分: {user.points}")
 
-# --- 核心启动逻辑 (修复版) ---
+# --- 核心启动逻辑 ---
 def run_flask():
-    # 在独立线程启动 Flask，禁止 reloader 以免报错
+    # 在独立线程启动 Flask，use_reloader=False 防止重复启动
     app.run(host='0.0.0.0', port=PORT, use_reloader=False)
 
 async def main():
@@ -193,12 +194,12 @@ async def main():
 
     logger.info("🤖 Bot starting...")
     
-    # 关键修改：手动初始化和启动 polling，完全控制循环
+    # 手动控制循环，解决信号冲突
     await application.initialize()
     await application.start()
     await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
 
-    # 保持主线程运行，直到收到停止信号
+    # 保持运行
     stop_event = asyncio.Event()
     await stop_event.wait()
 
