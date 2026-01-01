@@ -1,8 +1,8 @@
 from flask import Blueprint, render_template, request, redirect, session, jsonify, g
 from app import db
 from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM
-from telegram import Update, ChatMember, ChatMemberUpdated
-from telegram.ext import Application, CommandHandler, MessageHandler, ChatMemberHandler, filters
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import os, jwt, time, json, asyncio, re
 from datetime import datetime, timedelta
 
@@ -15,7 +15,8 @@ def inject_context():
     if session.get('logged_in'):
         data['all_groups'] = BotGroup.query.order_by(BotGroup.updated_at.desc()).all()
     gid = session.get('current_group_id')
-    if gid: data['current_group'] = BotGroup.query.get(gid)
+    if gid:
+        data['current_group'] = BotGroup.query.get(gid)
     return data
 
 # --- 辅助函数 ---
@@ -23,7 +24,8 @@ def safe_int(val, default=30):
     try:
         if val is None or str(val).strip() == "": return default
         return int(val)
-    except: return default
+    except:
+        return default
 
 def get_group_conf(group):
     conf = DEFAULT_SYSTEM.copy()
@@ -87,12 +89,14 @@ def page_settings(gid):
     group = BotGroup.query.get_or_404(gid)
     conf = get_group_conf(group)
     fields = get_group_fields(group)
+    # ⚠️ 关键：查询所有频道类型
     channels = BotGroup.query.filter_by(type='channel').all()
     return render_template('settings.html', page='settings', group=group, conf=conf, fields=fields, channels=channels)
 
 # =======================
 # 📡 API 路由
 # =======================
+
 @core_bp.route('/api/save_settings', methods=['POST'])
 def api_save_settings():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
@@ -169,7 +173,10 @@ def api_push_user():
         line = line.replace("{tg_id}", str(user.tg_id))
         line = re.sub(r'\{.*?\}', '', line)
         if app.global_bot and app.global_loop:
-            asyncio.run_coroutine_threadsafe(app.global_bot.send_message(chat_id=channel_id, text=line, parse_mode='HTML'), app.global_loop)
+            asyncio.run_coroutine_threadsafe(
+                app.global_bot.send_message(chat_id=channel_id, text=line, parse_mode='HTML'),
+                app.global_loop
+            )
             return jsonify({"status": "ok", "msg": "✅ 已推送"})
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
     return jsonify({"status": "err", "msg": "Bot未连接"})
@@ -197,27 +204,35 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 🤖 机器人逻辑 (终极修复版)
+# 🤖 机器人逻辑 (核心修复)
 # =======================
 
-async def record_group_update(chat):
-    """记录群组/频道信息的通用函数"""
+async def get_group_info_safe(chat):
+    """纯数据查询，防止 DetachedInstanceError"""
     if chat.type not in ['group', 'supergroup', 'channel']: return None
     from app import create_app
     with create_app().app_context():
         bg = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
         if not bg:
-            bg = BotGroup(chat_id=str(chat.id), is_active=False, type=chat.type)
+            # 🆕 频道发现逻辑
+            bg = BotGroup(chat_id=str(chat.id), is_active=True, type=chat.type, title=chat.title or "Channel")
             bg.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
             db.session.add(bg)
             print(f"🆕 发现新{chat.type}: {chat.title} ({chat.id})")
         
+        # 更新标题
         if bg.title != (chat.title or chat.username):
             bg.title = chat.title or chat.username
-        
+            
         bg.updated_at = datetime.now()
         db.session.commit()
-        return {'id': bg.id, 'is_active': bg.is_active, 'config': bg.config, 'fields_config': bg.fields_config}
+        
+        return {
+            'id': bg.id, 
+            'is_active': bg.is_active, 
+            'config': bg.config, 
+            'fields_config': bg.fields_config
+        }
 
 async def bot_start(update: Update, context):
     if update.effective_chat.type == 'private' and update.effective_user.id == int(os.getenv('ADMIN_ID', 0)):
@@ -226,49 +241,41 @@ async def bot_start(update: Update, context):
         url = f"{base}/core/magic_login?token={token}"
         await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
 
-# 🆕 新增：监听机器人被加入群/频道的事件
-async def chat_member_handler(update: Update, context):
-    chat = update.effective_chat
-    # 只要由于状态改变（比如被拉入频道），就立即记录
-    await record_group_update(chat)
-
 async def bot_handler(update: Update, context):
     msg = update.message or update.channel_post
     if not msg: return
     
-    # 1. 发现逻辑
-    g_info = await record_group_update(update.effective_chat)
+    # 1. 发现群组/频道
+    g_info = await get_group_info_safe(update.effective_chat)
     if not g_info: return
 
-    # 2. 准备配置数据
+    # 构造配置对象
     class MockGroup:
         def __init__(self, c, f): self.config=c; self.fields_config=f
     mock_g = MockGroup(g_info['config'], g_info['fields_config'])
+    
     conf = get_group_conf(mock_g)
+    fields = get_group_fields(mock_g)
     
-    if not g_info['is_active']: return
-
-    # --- 频道逻辑结束点 ---
-    # 如果是频道消息（没有 user），则到此为止（只负责发现和记录）
-    if not update.effective_user: return
-    
-    # --- 群组互动逻辑 ---
-    user = update.effective_user
     text = msg.text.strip() if msg.text else ""
+    user = update.effective_user
     gid = g_info['id']
 
-    # 3. 自动点赞 (移到最前，确保优先触发)
+    # 如果没有用户（如频道消息），则只做发现，不处理业务
+    if not user: return 
+
+    # 2. 自动点赞 (提前到指令之前，确保每次发言都检查)
     if conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
-            # 只要该用户存在于本群的 GroupUser 表中，就点赞
-            exists = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
-            if exists:
+            uid = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
+            if uid:
                 try: await msg.set_reaction(conf.get('like_emoji', '❤️'))
                 except: pass
 
-    # 4. 打卡逻辑
+    # 3. 打卡指令
     checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
+    # 简单的包含判断或者全等判断
     if text in checkin_cmds:
         if not conf.get('checkin_open'): return
         from app import create_app
@@ -289,8 +296,9 @@ async def bot_handler(update: Update, context):
             try: context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=msg)
             except: pass
             context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=reply)
+            return # 打卡处理完直接返回，不继续匹配查询
 
-    # 5. 查询逻辑 (允许任何人查询)
+    # 4. 查询指令 (允许任何人查询，不仅限认证用户)
     q_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
     matched = next((c for c in q_cmds if text.startswith(c)), None)
     
@@ -313,7 +321,7 @@ async def bot_handler(update: Update, context):
             else:
                 header = conf.get('msg_query_header', '')
                 tpl = conf.get('template', '')
-                f_map = {f['key']: f['label'] for f in get_group_fields(mock_g)}
+                f_map = {f['key']: f['label'] for f in fields}
                 lines = []
                 for u in users:
                     try:
@@ -334,13 +342,8 @@ async def run_bot():
     app_bot = Application.builder().token(token).build()
     app.global_bot = app_bot.bot
     app.global_loop = asyncio.get_running_loop()
-    
-    # 注册处理器
     app_bot.add_handler(CommandHandler("start", bot_start))
-    # 🆕 监听成员变动 (发现频道/群组的关键)
-    app_bot.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
     app_bot.add_handler(MessageHandler(filters.ALL, bot_handler))
-    
     await app_bot.initialize()
     await app_bot.start()
     await app_bot.updater.start_polling()
