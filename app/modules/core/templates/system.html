@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+    <!-- 打卡配置 -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow-sm">
+            <div class="card-header bg-white fw-bold">打卡配置</div>
+            <div class="card-body">
+                <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="checkin_open" {{ 'checked' if sys.checkin_open }}><label>开启打卡</label></div>
+                <div class="mb-3"><label class="small text-muted">指令</label><input id="checkin_cmd" class="form-control" value="{{ sys.checkin_cmd }}"></div>
+                <div class="d-grid gap-2 mb-3">
+                    <button class="btn btn-outline-primary text-start" onclick="openEditor('msg_checkin_success','打卡成功消息')">打卡成功消息 <span class="float-end small">修改</span></button>
+                    <button class="btn btn-outline-danger text-start" onclick="openEditor('msg_not_registered','未认证消息')">未认证消息 <span class="float-end small">修改</span></button>
+                    <button class="btn btn-outline-secondary text-start" onclick="openEditor('msg_repeat_checkin','重复消息')">重复打卡消息 <span class="float-end small">修改</span></button>
+                </div>
+                <div class="mb-3"><label class="small text-muted">指令删除时间(s)</label><input type="number" id="checkin_del_time" class="form-control" value="{{ sys.checkin_del_time }}"></div>
+                <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if sys.auto_like }}><label>认证用户点赞 (表情:<input id="like_emoji" value="{{ sys.like_emoji }}" style="width:30px;border:none"> )</label></div>
+            </div>
+        </div>
+    </div>
+    <!-- 查询配置 -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow-sm">
+            <div class="card-header bg-white fw-bold">查询配置</div>
+            <div class="card-body">
+                <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="query_open" {{ 'checked' if sys.query_open }}><label>开启查询</label></div>
+                <div class="mb-3"><label class="small text-muted">指令</label><input id="query_cmd" class="form-control" value="{{ sys.query_cmd }}"></div>
+                <div class="d-grid gap-2 mb-3">
+                    <button class="btn btn-outline-success text-start" onclick="openEditor('msg_query_header','消息头')">列表抬头 <span class="float-end small">修改</span></button>
+                    <button class="btn btn-outline-dark text-start" onclick="openEditor('template','模板')">用户模板 <span class="float-end small">修改</span></button>
+                </div>
+                <div class="mb-3"><label class="small text-muted">指令删除时间(s)</label><input type="number" id="query_del_time" class="form-control" value="{{ sys.query_del_time }}"></div>
+            </div>
+        </div>
+    </div>
+</div>
+<button class="btn btn-primary w-100 fw-bold mb-5" onclick="saveAll()">保存所有设置</button>
+
+<!-- 弹窗 & 隐藏域 -->
+<div class="modal fade" id="editorModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+    <div class="modal-header"><h6 class="modal-title">编辑</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="mb-2"><small>变量:</small> <span class="badge bg-light text-dark border cursor-pointer" onclick="insert('{onlineEmoji}')">表情</span> {% for f in fields %}<span class="badge bg-light text-primary border cursor-pointer" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>{% endfor %}</div>
+        <div class="btn-group w-100 mb-2 border"><button class="btn btn-sm btn-light" onclick="cmd('bold')">B</button><button class="btn btn-sm btn-light" onclick="link()">🔗</button></div>
+        <div id="richEditor" class="form-control" contenteditable="true" style="min-height:200px;outline:none"></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-primary" onclick="saveEd()">确定</button></div>
+</div></div></div>
+
+<div style="display:none">
+    <textarea id="v_msg_checkin_success">{{ sys.msg_checkin_success }}</textarea>
+    <textarea id="v_msg_not_registered">{{ sys.msg_not_registered }}</textarea>
+    <textarea id="v_msg_repeat_checkin">{{ sys.msg_repeat_checkin }}</textarea>
+    <textarea id="v_msg_query_header">{{ sys.msg_query_header }}</textarea>
+    <textarea id="v_template">{{ sys.template }}</textarea>
+</div>
+
+<script>
+    let cur='', modal=null;
+    document.addEventListener('DOMContentLoaded', ()=> modal = new bootstrap.Modal(document.getElementById('editorModal')));
+    function openEditor(k,t){ cur=k; document.querySelector('.modal-title').innerText=t; document.getElementById('richEditor').innerHTML=document.getElementById('v_'+k).value; modal.show(); }
+    function saveEd(){ document.getElementById('v_'+cur).value=document.getElementById('richEditor').innerHTML; modal.hide(); }
+    function cmd(c,v=null){ document.getElementById('richEditor').focus(); document.execCommand(c,false,v); }
+    function insert(t){ cmd('insertText',t); }
+    function link(){ let u=prompt('Url:'); if(u) cmd('createLink',u); }
+    function saveAll(){
+        const d = {
+            checkin_open: document.getElementById('checkin_open').checked, checkin_cmd: document.getElementById('checkin_cmd').value,
+            checkin_del_time: document.getElementById('checkin_del_time').value, auto_like: document.getElementById('auto_like').checked, like_emoji: document.getElementById('like_emoji').value,
+            query_open: document.getElementById('query_open').checked, query_cmd: document.getElementById('query_cmd').value, query_del_time: document.getElementById('query_del_time').value,
+            msg_checkin_success: document.getElementById('v_msg_checkin_success').value, msg_not_registered: document.getElementById('v_msg_not_registered').value,
+            msg_repeat_checkin: document.getElementById('v_msg_repeat_checkin').value, msg_query_header: document.getElementById('v_msg_query_header').value, template: document.getElementById('v_template').value,
+            push_channel_id: "{{ sys.push_channel_id }}", online_emoji: "{{ sys.online_emoji }}", offline_emoji: "{{ sys.offline_emoji }}"
+        };
+        fetch('/core/api/save_system', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)}).then(()=>alert('✅ 保存成功'));
+    }
+</script>
+{% endblock %}
