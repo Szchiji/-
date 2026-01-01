@@ -1,5 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+    /* 按钮行样式 */
+    .btn-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+    .btn-row .form-control { flex: 1; }
+    /* 编辑器样式优化 */
+    #editor { white-space: pre-wrap; word-break: break-word; }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4 class="fw-bold m-0"><i class="fa-solid fa-sliders me-2"></i>功能配置 ({{ group.title }})</h4>
     <button class="btn btn-primary fw-bold px-4" onclick="saveSettings()">
@@ -8,55 +16,78 @@
 </div>
 
 <div class="row">
-    <!-- 左侧参数 (保持不变) -->
+    <!-- 左侧：参数配置 -->
     <div class="col-lg-4 mb-4">
         <div class="card shadow-sm border-0 h-100">
             <div class="card-header bg-white fw-bold py-3">交互参数</div>
             <div class="card-body">
-                <div class="form-check form-switch mb-2">
-                    <input class="form-check-input" type="checkbox" id="checkin_open" {{ 'checked' if conf.checkin_open }}>
-                    <label class="fw-bold">开启打卡</label>
-                </div>
-                <div class="mb-3">
-                    <label class="small text-muted">打卡指令</label>
-                    <input id="checkin_cmd" class="form-control form-control-sm" value="{{ conf.checkin_cmd }}" placeholder="打卡, 上班">
-                </div>
-                
-                <div class="form-check form-switch mb-2">
-                    <input class="form-check-input" type="checkbox" id="query_filter_open" {{ 'checked' if conf.query_filter_open }}>
-                    <label class="fw-bold">开启查询/筛选</label>
-                </div>
-                <div class="mb-3">
-                    <label class="small text-muted">查询指令</label>
-                    <input id="query_cmd" class="form-control form-control-sm" value="{{ conf.query_cmd }}" placeholder="查询">
-                </div>
-
-                <div class="row g-2 mb-3">
-                    <div class="col-6">
-                        <label class="small text-muted">打卡删除(秒)</label>
+                <!-- 打卡模块 -->
+                <div class="p-3 bg-light rounded mb-3">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="checkin_open" {{ 'checked' if conf.checkin_open }}>
+                        <label class="fw-bold">开启打卡</label>
+                    </div>
+                    <div class="mb-2">
+                        <label class="small text-muted">指令 (不自动删除)</label>
+                        <input id="checkin_cmd" class="form-control form-control-sm" value="{{ conf.checkin_cmd }}" placeholder="打卡, 上班">
+                    </div>
+                    <div class="mb-0">
+                        <label class="small text-muted">结果删除时间 (秒)</label>
                         <input type="number" id="checkin_del_time" class="form-control form-control-sm" value="{{ conf.checkin_del_time }}">
                     </div>
-                    <div class="col-6">
-                        <label class="small text-muted">查询删除(秒)</label>
-                        <input type="number" id="query_del_time" class="form-control form-control-sm" value="{{ conf.query_del_time }}">
-                    </div>
                 </div>
                 
+                <!-- 查询模块 -->
+                <div class="p-3 bg-light rounded mb-3">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="query_open" {{ 'checked' if conf.query_open }}>
+                        <label class="fw-bold">开启普通查询</label>
+                    </div>
+                    <div class="mb-2">
+                        <label class="small text-muted">普通查询指令 (显示全员)</label>
+                        <input id="query_cmd" class="form-control form-control-sm" value="{{ conf.query_cmd }}" placeholder="查询">
+                    </div>
+
+                    <hr class="my-2">
+
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="query_filter_open" {{ 'checked' if conf.query_filter_open }}>
+                        <label class="fw-bold">开启筛选(占位符)查询</label>
+                    </div>
+                    <div class="mb-2">
+                        <div class="form-text small">支持发送 "关键词" 直接搜索</div>
+                    </div>
+
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="small text-muted">每页行数</label>
+                            <input type="number" id="page_size" class="form-control form-control-sm" value="{{ conf.page_size }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="small text-muted">删除时间(秒)</label>
+                            <input type="number" id="query_del_time" class="form-control form-control-sm" value="{{ conf.query_del_time }}">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 互动模块 -->
                 <div class="mb-3">
-                    <label class="small text-muted">每页显示数量</label>
-                    <input type="number" id="page_size" class="form-control form-control-sm" value="{{ conf.page_size }}">
-                </div>
-
-                <hr>
-                
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <label class="small text-muted">自动点赞</label>
-                    <div class="form-check form-switch m-0">
-                        <input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if conf.auto_like }}>
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label class="small text-muted">自动点赞 (强制)</label>
+                        <div class="form-check form-switch m-0">
+                            <input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if conf.auto_like }}>
+                        </div>
                     </div>
+                    <input id="like_emoji" class="form-control form-control-sm" value="{{ conf.like_emoji }}" placeholder="❤️">
                 </div>
-                <input id="like_emoji" class="form-control mb-3 form-control-sm" value="{{ conf.like_emoji }}" placeholder="❤️">
 
+                <!-- 禁言设置 -->
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="auto_mute_expired" {{ 'checked' if conf.auto_mute_expired }}>
+                    <label class="fw-bold text-danger">过期自动禁言</label>
+                </div>
+
+                <!-- 推送频道 -->
                 <div class="mb-3">
                     <label class="small text-muted fw-bold text-success">推送频道 ID</label>
                     <input id="push_channel_id" class="form-control form-control-sm" value="{{ conf.push_channel_id or '' }}" placeholder="-100xxxxxxx">
@@ -65,8 +96,9 @@
         </div>
     </div>
 
-    <!-- 右侧文案 (增强编辑器) -->
+    <!-- 右侧：文案与按钮 -->
     <div class="col-lg-8 mb-4">
+        <!-- 1. 文案编辑器 -->
         <div class="card shadow-sm border-0 mb-4">
             <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
                 <span class="fw-bold">文案与模板</span>
@@ -74,7 +106,6 @@
                     <option value="template">👤 列表单行模板</option>
                     <option value="msg_query_header">📝 普通查询抬头</option>
                     <option value="msg_filter_header">🔍 筛选查询抬头</option>
-                    <option value="msg_expired_ban">⛔️ 过期禁言提示</option> <!-- 🆕 -->
                     <option value="push_template">📢 频道推送模板</option>
                     <option value="msg_checkin_success">✅ 打卡成功消息</option>
                     <option value="msg_not_registered">⚠️ 未认证提示</option>
@@ -82,39 +113,143 @@
                 </select>
             </div>
             <div class="card-body d-flex flex-column p-0">
-                <!-- 🆕 增强工具栏 -->
+                <!-- 工具栏 -->
                 <div class="p-2 bg-light border-bottom d-flex flex-wrap gap-2 align-items-center">
                     <div class="btn-group bg-white border rounded shadow-sm">
-                        <button class="btn btn-sm btn-light" onclick="cmd('bold')" title="加粗"><i class="fa-solid fa-bold"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="cmd('italic')" title="斜体"><i class="fa-solid fa-italic"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="cmd('underline')" title="下划线"><i class="fa-solid fa-underline"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="cmd('strikethrough')" title="删除线"><i class="fa-solid fa-strikethrough"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="link()" title="链接"><i class="fa-solid fa-link"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="cmd('removeFormat')" title="清除格式"><i class="fa-solid fa-eraser"></i></button>
+                        <button class="btn btn-sm btn-light" onclick="exec('bold')"><b>B</b></button>
+                        <button class="btn btn-sm btn-light" onclick="exec('italic')"><i>I</i></button>
+                        <button class="btn btn-sm btn-light" onclick="addLink()">🔗</button>
+                        <button class="btn btn-sm btn-light" onclick="exec('removeFormat')">🧹</button>
                     </div>
                     <div class="vr mx-1"></div>
-                    <span class="badge bg-white text-dark border cursor-pointer" onclick="insert('{onlineEmoji}')">🟢表情</span>
-                    <span class="badge bg-info text-dark border cursor-pointer" onclick="insert('{序号}')">#️⃣序号</span>
+                    <span class="badge bg-white text-dark border cursor-pointer" onclick="insertHtml('{onlineEmoji}')">🟢表情</span>
+                    <span class="badge bg-info text-dark border cursor-pointer" onclick="insertHtml('{序号}')">#️⃣序号</span>
                     {% for f in fields %}
-                    <span class="badge bg-white text-primary border cursor-pointer" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>
+                    <span class="badge bg-white text-primary border cursor-pointer" onclick="insertHtml('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>
                     {% endfor %}
-                    <span class="badge bg-warning text-dark border cursor-pointer" onclick="insert('{tg_id}')">TG_ID</span>
+                    <span class="badge bg-warning text-dark border cursor-pointer" onclick="insertHtml('{tg_id}')">TG_ID</span>
                 </div>
-                <div id="editor" class="p-3 flex-grow-1" contenteditable="true" style="outline:none; min-height: 250px;"></div>
-                <div class="p-2 border-top bg-light text-end"><button class="btn btn-sm btn-secondary" onclick="saveTmp()">暂存</button></div>
+                
+                <!-- 编辑区域 -->
+                <div id="editor" class="p-3 flex-grow-1" contenteditable="true" style="outline:none; min-height: 200px;"></div>
+                
+                <div class="p-2 border-top bg-light text-end">
+                    <button class="btn btn-sm btn-secondary" onclick="saveTmp()">暂存当前文案</button>
+                </div>
             </div>
         </div>
 
+        <!-- 2. 按钮生成器 -->
         <div class="card shadow-sm border-0">
-            <div class="card-header bg-white fw-bold py-3">自定义按钮 (JSON)</div>
-            <div class="card-body">
-                <textarea id="custom_buttons" class="form-control" rows="3" placeholder='[{"text":"联系客服", "url":"https://t.me/xxx"}]'>{{ conf.custom_buttons }}</textarea>
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                <span class="fw-bold">自定义按钮 (列表底部)</span>
+                <button class="btn btn-sm btn-success" onclick="addButtonRow()"><i class="fa-solid fa-plus"></i> 添加一行</button>
+            </div>
+            <div class="card-body bg-light" id="btnContainer">
+                <!-- 动态生成按钮行 -->
+            </div>
+            <div class="card-footer bg-white text-muted small">
+                每一行代表一个按钮。
             </div>
         </div>
     </div>
 </div>
 
 <script>
+    // --- 1. 编辑器逻辑 (光标记忆 + 空格修复) ---
+    let savedRange = null;
+    const editor = document.getElementById('editor');
+
+    // 监听光标变化，实时记录位置
+    document.addEventListener('selectionchange', () => {
+        const sel = window.getSelection();
+        if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+            savedRange = sel.getRangeAt(0);
+        }
+    });
+
+    // 失去焦点时不要清空 range，而是保持最后状态
+    editor.addEventListener('blur', () => {}); 
+
+    function exec(cmd, val) {
+        restoreSelection();
+        document.execCommand(cmd, false, val);
+        editor.focus();
+    }
+
+    function addLink() {
+        const url = prompt('输入链接 URL:');
+        if (url) exec('createLink', url);
+    }
+
+    function insertHtml(html) {
+        restoreSelection();
+        document.execCommand('insertText', false, html); // 使用 insertText 避免插入多余的 span 样式
+        editor.focus();
+    }
+
+    function restoreSelection() {
+        editor.focus();
+        if (savedRange) {
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(savedRange);
+        }
+    }
+
+    // --- 2. 按钮生成器逻辑 ---
+    // 初始数据
+    let loadedButtons = [];
+    try {
+        loadedButtons = JSON.parse(`{{ conf.custom_buttons|safe }}` || '[]');
+    } catch(e) { loadedButtons = []; }
+
+    const btnContainer = document.getElementById('btnContainer');
+
+    function renderButtons() {
+        btnContainer.innerHTML = '';
+        loadedButtons.forEach((btn, index) => {
+            const row = document.createElement('div');
+            row.className = 'btn-row';
+            row.innerHTML = `
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text">文案</span>
+                    <input type="text" class="form-control btn-text" value="${btn.text}">
+                </div>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text">链接</span>
+                    <input type="text" class="form-control btn-url" value="${btn.url}">
+                </div>
+                <button class="btn btn-sm btn-outline-danger" onclick="removeBtn(${index})"><i class="fa-solid fa-trash"></i></button>
+            `;
+            btnContainer.appendChild(row);
+        });
+        if (loadedButtons.length === 0) {
+            btnContainer.innerHTML = '<div class="text-center text-muted py-3">暂无按钮，请点击右上角添加</div>';
+        }
+    }
+
+    function addButtonRow() {
+        loadedButtons.push({text: '', url: ''});
+        renderButtons();
+    }
+
+    function removeBtn(index) {
+        loadedButtons.splice(index, 1);
+        renderButtons();
+    }
+
+    function collectButtons() {
+        const res = [];
+        document.querySelectorAll('.btn-row').forEach(row => {
+            const t = row.querySelector('.btn-text').value.trim();
+            const u = row.querySelector('.btn-url').value.trim();
+            if(t && u) res.push({text: t, url: u});
+        });
+        return JSON.stringify(res);
+    }
+
+    // --- 3. 配置保存逻辑 ---
     let msgs = {
         template: `{{ conf.template|safe }}`,
         push_template: `{{ conf.push_template|safe }}`,
@@ -122,28 +257,29 @@
         msg_not_registered: `{{ conf.msg_not_registered|safe }}`,
         msg_repeat_checkin: `{{ conf.msg_repeat_checkin|safe }}`,
         msg_query_header: `{{ conf.msg_query_header|safe }}`,
-        msg_filter_header: `{{ conf.msg_filter_header|safe }}`,
-        msg_expired_ban: `{{ conf.msg_expired_ban|safe }}`
+        msg_filter_header: `{{ conf.msg_filter_header|safe }}`
     };
     
     const currentGroupId = {{ group.id }};
-    document.addEventListener('DOMContentLoaded', () => loadMsg());
+    document.addEventListener('DOMContentLoaded', () => {
+        loadMsg();
+        renderButtons(); // 渲染按钮
+    });
 
     function loadMsg() { 
         if(!msgs.msg_filter_header) msgs.msg_filter_header = "🔍 <b>筛选结果：</b>\n";
-        if(!msgs.msg_expired_ban) msgs.msg_expired_ban = "⛔️ <b>您的认证已过期，已被暂时禁言。</b>";
         document.getElementById('editor').innerHTML = msgs[document.getElementById('msgSelector').value] || ''; 
     }
     
     function saveTmp() { 
-        msgs[document.getElementById('msgSelector').value] = document.getElementById('editor').innerHTML; 
+        // ⚡️ 修复空格问题：替换 &nbsp; 为普通空格
+        let content = document.getElementById('editor').innerHTML;
+        content = content.replace(/&nbsp;/g, ' '); 
+        msgs[document.getElementById('msgSelector').value] = content;
+        
         const btn = document.querySelector('.btn-secondary');
         btn.innerHTML = '已暂存'; setTimeout(() => btn.innerHTML = '暂存', 500);
     }
-    
-    function cmd(c,v){ document.getElementById('editor').focus(); document.execCommand(c,false,v); }
-    function insert(t){ cmd('insertText', t); }
-    function link(){ let u=prompt('URL:'); if(u) cmd('createLink',u); }
     
     function saveSettings() {
         saveTmp(); 
@@ -153,15 +289,23 @@
                 ...msgs,
                 checkin_open: document.getElementById('checkin_open').checked,
                 checkin_cmd: document.getElementById('checkin_cmd').value,
-                query_filter_open: document.getElementById('query_filter_open').checked,
+                
+                query_open: document.getElementById('query_open').checked, // 普通查询开关
                 query_cmd: document.getElementById('query_cmd').value,
+                
+                query_filter_open: document.getElementById('query_filter_open').checked, // 筛选开关
+                
                 page_size: document.getElementById('page_size').value,
                 checkin_del_time: document.getElementById('checkin_del_time').value,
                 query_del_time: document.getElementById('query_del_time').value,
+                
                 auto_like: document.getElementById('auto_like').checked,
                 like_emoji: document.getElementById('like_emoji').value,
+                auto_mute_expired: document.getElementById('auto_mute_expired').checked,
+
                 push_channel_id: document.getElementById('push_channel_id').value,
-                custom_buttons: document.getElementById('custom_buttons').value,
+                custom_buttons: collectButtons(), // ⚡️ 收集按钮数据
+                
                 online_emoji: "{{ conf.online_emoji }}", 
                 offline_emoji: "{{ conf.offline_emoji }}"
             }
