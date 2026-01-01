@@ -1,29 +1,31 @@
-from flask import Blueprint, render_template, request, redirect, session, jsonify
-from app import db, global_bot, global_loop
-# ⚠️ 注意这里：只导入 BotGroup，不要导入 Chat
-from app.models import User, BotGroup, DEFAULT_FIELDS, DEFAULT_SYSTEM, DEFAULT_CHAT_SETTINGS
-from app.services import get_conf, set_conf
+from flask import Blueprint, render_template, request, redirect, session, jsonify, url_for
+from app import db
+from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import os, jwt, time, json, asyncio, re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
 
 # --- 辅助函数 ---
-def get_effective_conf(chat_id=None):
-    # 1. 基础配置
-    final_conf = get_conf('system', DEFAULT_SYSTEM).copy()
-    # 2. 群组覆盖
-    if chat_id:
-        group = BotGroup.query.filter_by(chat_id=str(chat_id)).first()
-        if group and group.config:
-            try:
-                g_conf = json.loads(group.config)
-                for k, v in g_conf.items():
-                    if v is not None and v != "": final_conf[k] = v
-            except: pass
-    return final_conf
+def get_group_conf(group):
+    """获取群配置，合并默认值"""
+    conf = DEFAULT_SYSTEM.copy()
+    if group.config:
+        try:
+            c = json.loads(group.config)
+            for k, v in c.items():
+                if v is not None: conf[k] = v
+        except: pass
+    return conf
+
+def get_group_fields(group):
+    """获取群字段定义"""
+    if group.fields_config:
+        try: return json.loads(group.fields_config)
+        except: pass
+    return DEFAULT_FIELDS
 
 # =======================
 # 🌐 网页路由
@@ -32,59 +34,74 @@ def get_effective_conf(chat_id=None):
 @core_bp.route('/')
 def index():
     if not session.get('logged_in'): return render_template('base.html', page='login')
-    return redirect('/core/dashboard')
+    # 登录后先去选择群组
+    return redirect('/core/select_group')
 
-@core_bp.route('/dashboard')
-def page_dashboard():
+@core_bp.route('/select_group')
+def page_select_group():
     if not session.get('logged_in'): return redirect('/core')
-    # 使用 BotGroup
     groups = BotGroup.query.order_by(BotGroup.updated_at.desc()).all()
-    return render_template('dashboard.html', page='dashboard', groups=groups)
+    return render_template('select_group.html', groups=groups)
 
-@core_bp.route('/users')
-def page_users():
-    if not session.get('logged_in'): return redirect('/core')
-    q = request.args.get('q', '')
-    query = User.query
-    if q: query = query.filter(User.profile_data.contains(q))
-    users = query.order_by(User.id.desc()).all()
-    fields = get_conf('fields', DEFAULT_FIELDS)
-    return render_template('users.html', page='users', users=users, fields=fields, q=q)
+# --- 进入特定群组的工作台 ---
 
-@core_bp.route('/fields')
-def page_fields():
-    if not session.get('logged_in'): return redirect('/core')
-    fields = get_conf('fields', DEFAULT_FIELDS)
-    return render_template('fields.html', page='fields', fields=fields, fields_json=json.dumps(fields))
+@core_bp.context_processor
+def inject_current_group():
+    """让所有模板都能获取当前群组信息 (用于侧边栏和顶部导航)"""
+    gid = session.get('current_group_id')
+    if gid:
+        g = BotGroup.query.get(gid)
+        return dict(current_group=g)
+    return dict(current_group=None)
 
-@core_bp.route('/system')
-def page_system():
+@core_bp.route('/group/<int:gid>/dashboard')
+def page_dashboard(gid):
     if not session.get('logged_in'): return redirect('/core')
-    sys = get_conf('system', DEFAULT_SYSTEM)
-    fields = get_conf('fields', DEFAULT_FIELDS)
-    return render_template('system.html', page='system', sys=sys, fields=fields)
-
-@core_bp.route('/group/<int:id>')
-def page_group_setting(id):
-    if not session.get('logged_in'): return redirect('/core')
-    # 使用 BotGroup
-    group = BotGroup.query.get_or_404(id)
-    group_conf = {}
-    if group.config:
-        try: group_conf = json.loads(group.config)
-        except: pass
+    session['current_group_id'] = gid # 记住当前群
+    group = BotGroup.query.get_or_404(gid)
     
-    global_conf = get_conf('system', DEFAULT_SYSTEM)
-    fields = get_conf('fields', DEFAULT_FIELDS)
-    return render_template('group_setting.html', group=group, g_conf=group_conf, sys=global_conf, fields=fields)
+    # 统计数据
+    user_count = GroupUser.query.filter_by(group_id=gid).count()
+    online_count = GroupUser.query.filter_by(group_id=gid, online=True).count()
+    
+    return render_template('dashboard.html', page='dashboard', group=group, stats={'users': user_count, 'online': online_count})
 
+@core_bp.route('/group/<int:gid>/users')
+def page_users(gid):
+    if not session.get('logged_in'): return redirect('/core')
+    group = BotGroup.query.get_or_404(gid)
+    
+    q = request.args.get('q', '')
+    query = GroupUser.query.filter_by(group_id=gid)
+    if q: query = query.filter(GroupUser.profile_data.contains(q))
+    users = query.order_by(GroupUser.id.desc()).all()
+    
+    fields = get_group_fields(group)
+    return render_template('users.html', page='users', group=group, users=users, fields=fields, q=q)
+
+@core_bp.route('/group/<int:gid>/fields')
+def page_fields(gid):
+    if not session.get('logged_in'): return redirect('/core')
+    group = BotGroup.query.get_or_404(gid)
+    fields = get_group_fields(group)
+    return render_template('fields.html', page='fields', group=group, fields=fields, fields_json=json.dumps(fields))
+
+@core_bp.route('/group/<int:gid>/settings')
+def page_settings(gid):
+    if not session.get('logged_in'): return redirect('/core')
+    group = BotGroup.query.get_or_404(gid)
+    conf = get_group_conf(group)
+    fields = get_group_fields(group)
+    return render_template('settings.html', page='settings', group=group, conf=conf, fields=fields)
+
+# --- 登录相关 ---
 @core_bp.route('/magic_login')
 def magic_login():
     token = request.args.get('token')
     try:
         if jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=['HS256']).get('uid') == int(os.getenv('ADMIN_ID', 0)):
             session['logged_in'] = True
-            return redirect('/core/dashboard')
+            return redirect('/core/select_group')
     except: pass
     return "Link Invalid", 403
 
@@ -96,41 +113,21 @@ def logout(): session.clear(); return redirect('/core')
 # 📡 API
 # =======================
 
-@core_bp.route('/api/toggle_group', methods=['POST'])
-def api_toggle_group():
-    if not session.get('logged_in'): return jsonify({"status":"err"}), 403
-    gid = request.json.get('id')
-    active = request.json.get('active')
-    # 使用 BotGroup
-    group = BotGroup.query.get(gid)
-    if group:
-        group.is_active = active
-        db.session.commit()
-    return jsonify({"status": "ok"})
-
-@core_bp.route('/api/save_group_config', methods=['POST'])
-def api_save_group_config():
-    if not session.get('logged_in'): return jsonify({"status":"err"}), 403
-    gid = request.json.get('id')
-    config_data = request.json.get('config')
-    # 使用 BotGroup
-    group = BotGroup.query.get(gid)
-    if group:
-        clean_conf = {k: v for k, v in config_data.items() if v is not None}
-        group.config = json.dumps(clean_conf, ensure_ascii=False)
-        db.session.commit()
-    return jsonify({"status": "ok"})
-
 @core_bp.route('/api/save_user', methods=['POST'])
 def api_save_user():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     data = request.json
+    gid = session.get('current_group_id')
+    if not gid: return jsonify({"status":"err", "msg": "No group selected"})
+    
     try:
         tg_id = int(data.get('tg_id'))
-        user = User.query.filter_by(tg_id=tg_id).first()
+        # ⚠️ 关键：只查当前群的用户
+        user = GroupUser.query.filter_by(group_id=gid, tg_id=tg_id).first()
         if not user:
-            user = User(tg_id=tg_id)
+            user = GroupUser(group_id=gid, tg_id=tg_id)
             db.session.add(user)
+        
         user.profile_data = json.dumps(data.get('profile', {}), ensure_ascii=False)
         days = int(data.get('add_days', 0))
         if days:
@@ -144,24 +141,40 @@ def api_save_user():
 @core_bp.route('/api/delete_user', methods=['POST'])
 def api_delete_user():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
-    User.query.filter_by(id=request.json.get('id')).delete()
+    GroupUser.query.filter_by(id=request.json.get('id')).delete()
     db.session.commit()
     return jsonify({"status": "ok"})
 
 @core_bp.route('/api/save_fields', methods=['POST'])
 def api_save_fields():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
-    set_conf('fields', request.json)
+    gid = session.get('current_group_id')
+    group = BotGroup.query.get(gid)
+    if group:
+        group.fields_config = json.dumps(request.json, ensure_ascii=False)
+        db.session.commit()
     return jsonify({"status": "ok"})
 
-@core_bp.route('/api/save_system', methods=['POST'])
-def api_save_system():
+@core_bp.route('/api/save_settings', methods=['POST'])
+def api_save_settings():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
-    curr = get_conf('system', DEFAULT_SYSTEM)
-    curr.update(request.json)
-    set_conf('system', curr)
+    gid = session.get('current_group_id')
+    group = BotGroup.query.get(gid)
+    if group:
+        # 过滤空值
+        clean = {k: v for k, v in request.json.items() if v is not None}
+        group.config = json.dumps(clean, ensure_ascii=False)
+        db.session.commit()
     return jsonify({"status": "ok"})
 
+@core_bp.route('/api/toggle_group', methods=['POST'])
+def api_toggle_group():
+    if not session.get('logged_in'): return jsonify({"status":"err"}), 403
+    group = BotGroup.query.get(request.json.get('id'))
+    if group:
+        group.is_active = request.json.get('active')
+        db.session.commit()
+    return jsonify({"status": "ok"})
 
 # =======================
 # 🤖 机器人逻辑
@@ -172,52 +185,55 @@ async def record_group(update: Update):
     if chat.type in ['group', 'supergroup', 'channel']:
         from app import create_app
         with create_app().app_context():
-            # 使用 BotGroup
             bg = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
             if not bg:
                 bg = BotGroup(chat_id=str(chat.id), is_active=False)
+                # 默认写入全局默认字段配置，防止新群无字段
+                bg.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
                 db.session.add(bg)
+            
             bg.title = chat.title or chat.username
             bg.type = chat.type
             bg.updated_at = datetime.now()
             db.session.commit()
-            return bg.is_active
-    return True
+            return bg
+    return None
 
 async def bot_start(update: Update, context):
     if update.effective_chat.type == 'private' and update.effective_user.id == int(os.getenv('ADMIN_ID', 0)):
         token = jwt.encode({'uid': update.effective_user.id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY'), algorithm='HS256')
         domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')
         url = f"{domain}/core/magic_login?token={token}"
-        await update.message.reply_html(f"💼 <b>管理后台：</b>\n<a href='{url}'>点击进入</a>")
+        await update.message.reply_html(f"💼 <b>进入管理后台：</b>\n<a href='{url}'>点击这里选择群组进行管理</a>")
 
 async def bot_handler(update: Update, context):
     if not update.message or not update.message.text: return
     
-    is_active = await record_group(update)
-    if not is_active: return
+    # 1. 发现群组 & 检查是否启用
+    group = await record_group(update)
+    if not group or not group.is_active: return
 
     text = update.message.text.strip()
     user = update.effective_user
-    chat_id = update.effective_chat.id
     
     # 获取配置
-    conf = get_effective_conf(chat_id)
-
-    # 自动点赞
+    conf = get_group_conf(group)
+    
+    # 2. 自动点赞 (只查当前群用户)
     if conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
-            if User.query.filter_by(tg_id=user.id).first():
+            if GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first():
                 try: await update.message.set_reaction(conf.get('like_emoji', '❤️'))
                 except: pass
 
-    # 打卡
+    # 3. 打卡
     if text == conf.get('checkin_cmd', '打卡'):
         if not conf.get('checkin_open'): return
         from app import create_app
         with create_app().app_context():
-            u = User.query.filter_by(tg_id=user.id).first()
+            # ⚠️ 关键：只查 GroupUser 表
+            u = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
             delay = int(conf.get('checkin_del_time', 30))
             
             if not u:
@@ -227,7 +243,6 @@ async def bot_handler(update: Update, context):
             else:
                 u.checkin_time = datetime.now()
                 u.online = True
-                u.last_chat_id = str(chat_id)
                 db.session.commit()
                 msg = await update.message.reply_html(conf.get('msg_checkin_success'))
             
@@ -235,21 +250,24 @@ async def bot_handler(update: Update, context):
             except: pass
             context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=msg)
 
-    # 查询
+    # 4. 查询
     if text == conf.get('query_cmd', '查询'):
         if not conf.get('query_open'): return
         from app import create_app
         with create_app().app_context():
             today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            users = User.query.filter(User.checkin_time >= today, User.online == True).all()
+            # ⚠️ 关键：只查当前群的在线用户
+            users = GroupUser.query.filter(GroupUser.group_id == group.id, GroupUser.checkin_time >= today, GroupUser.online == True).all()
             delay = int(conf.get('query_del_time', 30))
             
             if not users:
-                msg = await update.message.reply_text("😢 今日暂无打卡")
+                msg = await update.message.reply_text("😢 本群今日暂无打卡")
             else:
                 header = conf.get('msg_query_header', '')
                 tpl = conf.get('template', '')
-                fields_map = {f['key']: f['label'] for f in get_conf('fields', DEFAULT_FIELDS)}
+                # 获取本群字段定义
+                fields_map = {f['key']: f['label'] for f in get_group_fields(group)}
+                
                 lines = []
                 for u in users:
                     try:
