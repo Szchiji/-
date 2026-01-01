@@ -5,11 +5,10 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import os, jwt, time, json, asyncio, re
 from datetime import datetime, timedelta
-from sqlalchemy.orm import load_only
 
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
 
-# ... (inject_context 保持不变) ...
+# --- 上下文处理器 ---
 @core_bp.context_processor
 def inject_context():
     data = {'all_groups': []}
@@ -20,12 +19,16 @@ def inject_context():
         data['current_group'] = BotGroup.query.get(gid)
     return data
 
-# ... (get_group_conf, get_group_fields 保持不变) ...
+# --- 辅助函数 ---
 def get_group_conf(group):
     conf = DEFAULT_SYSTEM.copy()
     if group and group.config:
         try:
             c = json.loads(group.config)
+            # 兼容性修复：防止多层嵌套
+            if 'config' in c and isinstance(c['config'], dict):
+                c = c['config']
+                
             for k, v in c.items():
                 if v is not None: conf[k] = v
         except: pass
@@ -37,9 +40,9 @@ def get_group_fields(group):
         except: pass
     return DEFAULT_FIELDS
 
-# ... (网页路由部分保持不变，省略) ...
-# 请复用上一版网页路由代码 (page_dashboard, page_users, page_fields, page_settings)
-# 重点修改下面的 API 和 机器人逻辑
+# =======================
+# 🌐 网页路由
+# =======================
 
 @core_bp.route('/')
 def index():
@@ -91,36 +94,54 @@ def page_settings(gid):
     return render_template('settings.html', page='settings', group=group, conf=conf, fields=fields, channels=channels)
 
 # =======================
-# 📡 API 路由 (修复 AttributeError)
+# 📡 API 路由 (核心修复)
 # =======================
+
+@core_bp.route('/api/save_settings', methods=['POST'])
+def api_save_settings():
+    if not session.get('logged_in'): return jsonify({"status":"err"}), 403
+    
+    req_data = request.json
+    gid = req_data.get('group_id') or session.get('current_group_id')
+    group = BotGroup.query.get(gid)
+    
+    if group:
+        # ⚠️ 修复：从 'config' 字段提取真实配置
+        if 'config' in req_data:
+            real_config = req_data['config']
+        else:
+            # 兼容旧格式（平铺）
+            real_config = req_data.copy()
+            if 'group_id' in real_config: del real_config['group_id']
+
+        # 过滤无效值并保存
+        clean = {k: v for k, v in real_config.items() if v is not None}
+        group.config = json.dumps(clean, ensure_ascii=False)
+        db.session.commit()
+        
+    return jsonify({"status": "ok"})
 
 @core_bp.route('/api/save_fields', methods=['POST'])
 def api_save_fields():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
-    
-    # 修复：前端直接传的是 List，不是 Dict，所以不能用 request.json.get()
-    # 我们约定前端稍微改一下，把 list 包装在 dict 里传过来，或者从 session 取 gid
     gid = session.get('current_group_id')
-    if not gid: return jsonify({"status":"err", "msg": "No group selected"})
-    
     group = BotGroup.query.get(gid)
+    
     if group:
-        # 直接把请求体当作 fields 列表
-        fields_data = request.json 
-        if isinstance(fields_data, dict) and 'fields' in fields_data:
-             fields_data = fields_data['fields'] # 兼容包装格式
-             
-        group.fields_config = json.dumps(fields_data, ensure_ascii=False)
+        # 兼容 {fields: [...]} 和 [...]
+        data = request.json
+        if isinstance(data, dict) and 'fields' in data:
+            data = data['fields']
+        
+        group.fields_config = json.dumps(data, ensure_ascii=False)
         db.session.commit()
     return jsonify({"status": "ok"})
 
-# ... (save_user, save_settings, push_user 保持上一版不变，省略) ...
 @core_bp.route('/api/save_user', methods=['POST'])
 def api_save_user():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     data = request.json
     gid = data.get('group_id') or session.get('current_group_id')
-    if not gid: return jsonify({"status":"err", "msg": "Missing group_id"})
     
     try:
         tg_id = int(data.get('tg_id'))
@@ -129,11 +150,13 @@ def api_save_user():
             user = GroupUser(group_id=gid, tg_id=tg_id)
             db.session.add(user)
         user.profile_data = json.dumps(data.get('profile', {}), ensure_ascii=False)
+        
         days = int(data.get('add_days', 0))
         if days:
             now = datetime.now()
             base = user.expiration_date if (user.expiration_date and user.expiration_date > now) else now
             user.expiration_date = base + timedelta(days=days)
+            
         db.session.commit()
         return jsonify({"status": "ok"})
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
@@ -143,19 +166,6 @@ def api_delete_user():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     GroupUser.query.filter_by(id=request.json.get('id')).delete()
     db.session.commit()
-    return jsonify({"status": "ok"})
-
-@core_bp.route('/api/save_settings', methods=['POST'])
-def api_save_settings():
-    if not session.get('logged_in'): return jsonify({"status":"err"}), 403
-    data = request.json
-    gid = data.get('group_id') or session.get('current_group_id')
-    group = BotGroup.query.get(gid)
-    if group:
-        if 'group_id' in data: del data['group_id']
-        clean = {k: v for k, v in data.items() if v is not None}
-        group.config = json.dumps(clean, ensure_ascii=False)
-        db.session.commit()
     return jsonify({"status": "ok"})
 
 @core_bp.route('/api/push_user', methods=['POST'])
@@ -215,16 +225,14 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 🤖 机器人逻辑 (修复 DetachedInstanceError)
+# 🤖 机器人逻辑 (防断连版)
 # =======================
 
 async def get_group_info(chat):
-    """同步获取群组信息，并转为纯字典，断开ORM关联"""
+    """纯数据查询，不返回 ORM 对象"""
     if chat.type not in ['group', 'supergroup', 'channel']: return None
-    
     from app import create_app
     with create_app().app_context():
-        # 查找或创建
         bg = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
         if not bg:
             bg = BotGroup(chat_id=str(chat.id), is_active=False)
@@ -236,58 +244,50 @@ async def get_group_info(chat):
             
         bg.updated_at = datetime.now()
         db.session.commit()
-        
-        # ⚠️ 关键：提取需要的字段，不返回 ORM 对象
-        return {
-            'id': bg.id,
-            'is_active': bg.is_active,
-            'config': bg.config,
-            'fields_config': bg.fields_config
-        }
+        return {'id': bg.id, 'is_active': bg.is_active, 'config': bg.config, 'fields_config': bg.fields_config}
 
 async def bot_start(update: Update, context):
     if update.effective_chat.type == 'private' and update.effective_user.id == int(os.getenv('ADMIN_ID', 0)):
         token = jwt.encode({'uid': update.effective_user.id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY'), algorithm='HS256')
-        domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')
-        url = f"{domain}/core/magic_login?token={token}"
-        await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击进入管理</a>")
+        base = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')
+        url = f"{base}/core/magic_login?token={token}"
+        await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
 
 async def bot_handler(update: Update, context):
     msg = update.message or update.channel_post
     if not msg: return
     
-    # 1. 纯数据获取 (避免 DetachedInstanceError)
+    # 1. 获取群组信息 (纯字典)
     g_info = await get_group_info(update.effective_chat)
     if not g_info or not g_info['is_active']: return
 
-    # 构造配置对象
-    # 为了复用 get_group_conf，我们可以造一个简单的对象
+    # 构造 Mock 对象用于解析配置
     class MockGroup:
         def __init__(self, c, f): self.config=c; self.fields_config=f
+    mock_g = MockGroup(g_info['config'], g_info['fields_config'])
     
-    mock_group = MockGroup(g_info['config'], g_info['fields_config'])
-    conf = get_group_conf(mock_group)
-    fields = get_group_fields(mock_group)
-
+    conf = get_group_conf(mock_g)
+    fields = get_group_fields(mock_g)
+    
     text = msg.text.strip() if msg.text else ""
     user = update.effective_user
-    gid = g_info['id'] # 群组ID
-    
-    if not user: return # 频道消息处理结束
+    gid = g_info['id']
+
+    if not user: return # 频道无后续逻辑
 
     # 2. 自动点赞
     if conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
-            # 纯查询，不持有对象
-            exists = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
-            if exists:
+            # 纯查询 ID 存在性
+            uid = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
+            if uid:
                 try: await msg.set_reaction(conf.get('like_emoji', '❤️'))
                 except: pass
 
     # 3. 打卡
-    checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
-    if text in checkin_cmds:
+    cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
+    if text in cmds:
         if not conf.get('checkin_open'): return
         from app import create_app
         with create_app().app_context():
@@ -331,14 +331,13 @@ async def bot_handler(update: Update, context):
             else:
                 header = conf.get('msg_query_header', '')
                 tpl = conf.get('template', '')
-                # fields 已经在上面解析过了
-                fields_map = {f['key']: f['label'] for f in fields}
+                f_map = {f['key']: f['label'] for f in fields}
                 lines = []
                 for u in users:
                     try:
                         d = json.loads(u.profile_data)
                         l = tpl.replace("{onlineEmoji}", conf.get('online_emoji',''))
-                        for k, lbl in fields_map.items(): l = l.replace(f"{{{lbl}}}", str(d.get(k,'')))
+                        for k, lbl in f_map.items(): l = l.replace(f"{{{lbl}}}", str(d.get(k,'')))
                         lines.append(re.sub(r'\{.*?\}', '', l))
                     except: continue
                 reply = await msg.reply_html(header + "\n\n".join(lines))
