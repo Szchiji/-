@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+    <div class="card-header fw-bold">字段配置 (复刻截图9)</div>
+    <div class="card-body">
+        <div id="fieldsCon"></div>
+        <button class="btn btn-sm btn-outline-primary mt-3" onclick="addField()">+ 新增</button>
+        <button class="btn btn-primary mt-3 w-100" onclick="save()">保存配置</button>
+    </div>
+</div>
+<script>
+    let fields = {{ fields|tojson }};
+    function render() {
+        const con = document.getElementById('fieldsCon');
+        con.innerHTML = '';
+        fields.forEach((f,i) => {
+            let optHtml = '';
+            if(f.type !== 'text') {
+                let tags = (f.options||[]).map(o=>`<span class="badge bg-info me-1">${o} <span style="cursor:pointer" onclick="delOpt(${i},'${o}')">&times;</span></span>`).join('');
+                optHtml = `<div class="mt-2 border p-2 rounded">${tags}<input class="border-0 outline-0 ms-2" placeholder="输入回车..." onkeydown="addOpt(event,${i})"></div>`;
+            }
+            con.innerHTML += `
+            <div class="row g-2 mb-3 border-bottom pb-3">
+                <div class="col-md-3"><input class="form-control" value="${f.label}" onchange="fields[${i}].label=this.value" placeholder="名称"></div>
+                <div class="col-md-3"><input class="form-control" value="${f.key}" onchange="fields[${i}].key=this.value" placeholder="Key"></div>
+                <div class="col-md-2">
+                    <select class="form-select" onchange="fields[${i}].type=this.value;render()">
+                        <option value="text" ${f.type=='text'?'selected':''}>文本</option>
+                        <option value="select" ${f.type=='select'?'selected':''}>单选</option>
+                        <option value="checkbox" ${f.type=='checkbox'?'selected':''}>多选</option>
+                    </select>
+                </div>
+                <div class="col-md-3">${optHtml}</div>
+                <div class="col-md-1"><button class="btn btn-danger btn-sm" onclick="delField(${i})">×</button></div>
+            </div>`;
+        });
+    }
+    function addOpt(e,i) { if(e.key==='Enter'){ e.preventDefault(); let v=e.target.value; if(v){ if(!fields[i].options) fields[i].options=[]; fields[i].options.push(v); render(); }}}
+    function delOpt(i,v) { fields[i].options = fields[i].options.filter(o=>o!==v); render(); }
+    function addField() { fields.push({key:'k'+Date.now(), label:'', type:'text'}); render(); }
+    function delField(i) { fields.splice(i,1); render(); }
+    function save() { fetch('/api/save_fields', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(fields)}).then(()=>alert('Saved')); }
+    render();
+</script>
+{% endblock %}
