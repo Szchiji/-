@@ -1,9 +1,9 @@
 from flask import Blueprint, render_template, request, redirect, session, jsonify
 from app import db
 from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ChatMemberHandler, filters
-import os, jwt, time, json, asyncio, re, requests
+import os, jwt, time, json, asyncio, re, requests, math
 from datetime import datetime, timedelta
 
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
@@ -39,7 +39,7 @@ def get_group_fields(group):
         except: pass
     return DEFAULT_FIELDS
 
-# --- Web Routes ---
+# --- Web Routes (保持不变) ---
 @core_bp.route('/')
 def index(): return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
 
@@ -120,12 +120,20 @@ def api_save_user():
         if not u:
             u = GroupUser(group_id=gid, tg_id=tg_id)
             db.session.add(u)
+        
+        # 保存资料
         u.profile_data = json.dumps(d.get('profile', {}), ensure_ascii=False)
+        
+        # 🆕 处理有效期
         days = int(d.get('add_days', 0))
         if days:
             now = datetime.now()
+            # 如果当前已经过期，就从现在开始算；如果没过期，就从原过期时间续费
             base = u.expiration_date if (u.expiration_date and u.expiration_date > now) else now
             u.expiration_date = base + timedelta(days=days)
+            # 续费后自动解禁标记
+            u.is_banned = False 
+            
         db.session.commit()
         return jsonify({"status": "ok"})
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
@@ -145,7 +153,6 @@ def api_push_user():
     group = BotGroup.query.get(gid)
     user = GroupUser.query.get(uid)
     conf = get_group_conf(group)
-    
     cid = conf.get('push_channel_id')
     if not cid: return jsonify({"status": "err", "msg": "未配置推送频道ID"})
     
@@ -196,12 +203,57 @@ def logout(): session.clear(); return redirect('/core')
 # 🤖 机器人逻辑
 # =======================
 
-# --- 辅助：分页键盘生成器 ---
+# --- 辅助：有效期检查 & 禁言 ---
+async def check_user_expiration(user_db, chat_id, context, conf):
+    """
+    检查用户是否过期，并执行禁言/解禁操作
+    """
+    if not user_db.expiration_date:
+        return # 没设置有效期的永久用户
+
+    now = datetime.now()
+    try:
+        # 情况1：已过期，但还没标记禁言 -> 执行禁言
+        if user_db.expiration_date < now and not user_db.is_banned:
+            print(f"⛔️ 用户 {user_db.tg_id} 已过期，执行禁言")
+            await context.bot.restrict_chat_member(
+                chat_id=chat_id,
+                user_id=user_db.tg_id,
+                permissions=ChatPermissions(can_send_messages=False) # 禁言
+            )
+            user_db.is_banned = True
+            db.session.commit()
+            
+            # 发送过期提示
+            msg_text = conf.get('msg_expired_ban', '⛔️ 您的认证已过期，已被禁言。')
+            await context.bot.send_message(chat_id=chat_id, text=msg_text, parse_mode='HTML')
+            return True # 已处理禁言
+
+        # 情况2：未过期（续费了），但状态还是禁言 -> 执行解禁
+        elif user_db.expiration_date > now and user_db.is_banned:
+            print(f"✅ 用户 {user_db.tg_id} 已续费，执行解禁")
+            await context.bot.restrict_chat_member(
+                chat_id=chat_id,
+                user_id=user_db.tg_id,
+                permissions=ChatPermissions(
+                    can_send_messages=True,
+                    can_send_media_messages=True,
+                    can_send_other_messages=True
+                )
+            )
+            user_db.is_banned = False
+            db.session.commit()
+            return False
+
+    except Exception as e:
+        print(f"⚠️ 权限操作失败: {e}")
+    
+    return False
+
+# --- 辅助：分页键盘 ---
 def get_pagination_markup(page, total_pages, kw, conf):
     buttons = []
-    # 翻页行
     nav_row = []
-    # 关键词需要进行 URL 编码或者简单处理以放入 CallbackData，这里简化处理，假设关键词不含特殊字符
     safe_kw = kw if kw else "None"
     
     if page > 1:
@@ -209,12 +261,9 @@ def get_pagination_markup(page, total_pages, kw, conf):
     if page < total_pages:
         nav_row.append(InlineKeyboardButton("下一页 ➡️", callback_data=f"pg|{page+1}|{safe_kw}"))
     
-    # 页码显示 (占位，不可点)
     nav_row.insert(1 if len(nav_row)==2 else 0, InlineKeyboardButton(f"{page}/{total_pages}", callback_data="noop"))
-    
     if nav_row: buttons.append(nav_row)
     
-    # 自定义按钮行
     custom_text = conf.get('custom_btn_text')
     custom_url = conf.get('custom_btn_url')
     if custom_text and custom_url:
@@ -232,13 +281,11 @@ def build_list_text(users, page, per_page, conf, fields, header):
     f_map = {f['key']: f['label'] for f in fields}
     lines = []
     
-    # 动态注入序号
     for idx, u in enumerate(current_users):
         try:
             d = json.loads(u.profile_data)
             l = tpl.replace("{onlineEmoji}", conf.get('online_emoji',''))
             for k, lbl in f_map.items(): l = l.replace(f"{{{lbl}}}", str(d.get(k,'')))
-            # 可以在模板里增加 {序号} 支持
             l = l.replace("{序号}", str(start + idx + 1))
             lines.append(re.sub(r'\{.*?\}', '', l))
         except: continue
@@ -250,11 +297,11 @@ async def query_handler(update, context, gid, kw, conf, fields):
     chat_id = update.effective_chat.id
     from app import create_app
     with create_app().app_context():
-        # 1. 互斥删除：删除上一条查询结果
+        # 1. 互斥删除
         current_group = BotGroup.query.get(gid)
         if current_group.last_query_msg_id:
             try: await context.bot.delete_message(chat_id=chat_id, message_id=current_group.last_query_msg_id)
-            except: pass # 消息可能已被删除，忽略
+            except: pass 
 
         # 2. 查询数据
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -267,20 +314,22 @@ async def query_handler(update, context, gid, kw, conf, fields):
             
         users = base.order_by(GroupUser.checkin_time.desc()).all()
         
-        # 3. 发送或无视
+        # 3. 发送逻辑
         if not users:
-            # 如果是智能关键词搜索(非指令)，且无结果，则静默
-            if kw and not any(text.startswith(c) for c in conf.get('query_cmd', '查询').split(',') for text in [kw]): 
-                pass # 静默
-            else:
-                txt = f"😢 暂无匹配 '{kw}' 的用户" if kw else "😢 本群今日暂无打卡"
-                sent = await update.message.reply_text(txt)
-                # 记录ID以便下次删除
-                current_group.last_query_msg_id = sent.message_id
-                db.session.commit()
-                # 自动删除提示
-                try: context.job_queue.run_once(lambda c: c.job.data.delete(), 5, data=sent)
-                except: pass
+            # 🆕 关键逻辑：如果是智能搜索(kw存在)且没结果，直接静默退出，不发消息也不删用户消息
+            if kw and not any(kw.startswith(c) for c in conf.get('query_cmd', '查询').split(',')):
+                return
+            
+            # 如果是明确指令但没数据，才回复
+            txt = f"😢 暂无匹配 '{kw}' 的用户" if kw else "😢 本群今日暂无打卡"
+            sent = await update.message.reply_text(txt)
+            
+            # 记录ID
+            current_group.last_query_msg_id = sent.message_id
+            db.session.commit()
+            
+            try: context.job_queue.run_once(lambda c: c.job.data.delete(), 5, data=sent)
+            except: pass
         else:
             page_size = safe_int(conf.get('page_size'), 10)
             total_pages = ((len(users) - 1) // page_size) + 1
@@ -289,25 +338,24 @@ async def query_handler(update, context, gid, kw, conf, fields):
             
             sent_msg = await update.message.reply_html(text, reply_markup=markup)
             
-            # 记录新消息ID
             current_group.last_query_msg_id = sent_msg.message_id
             db.session.commit()
             
-            # 设置查询列表自动删除
             del_time = safe_int(conf.get('query_del_time'), 60)
             try: context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=sent_msg)
             except: pass
 
-        # 删除用户发送的指令消息 (3秒后)
-        try: context.job_queue.run_once(lambda c: c.job.data.delete(), 3, data=update.message)
-        except: pass
+        # 🆕 只有明确指令查询时，我们才不删除用户指令？
+        # 用户需求：打卡和查询指令不删除。
+        # 所以这里我们删掉之前的 delete 代码。
+        pass
 
 # --- 翻页回调 ---
 async def pagination_callback(update: Update, context):
     query = update.callback_query
     if query.data == "noop": return await query.answer()
     
-    parts = query.data.split('|') # 格式: pg|页码|关键词
+    parts = query.data.split('|') 
     page = int(parts[1])
     kw = parts[2] if parts[2] != "None" else None
     
@@ -331,7 +379,6 @@ async def pagination_callback(update: Update, context):
         page_size = safe_int(conf.get('page_size'), 10)
         total_pages = ((len(users) - 1) // page_size) + 1
         
-        # 修正页码越界
         if page > total_pages: page = total_pages
         if page < 1: page = 1
         
@@ -341,8 +388,7 @@ async def pagination_callback(update: Update, context):
         try: 
             await query.edit_message_text(text=text, parse_mode='HTML', reply_markup=markup)
             await query.answer()
-        except Exception as e: 
-            await query.answer() # 内容未变时忽略错误
+        except: await query.answer()
 
 async def bot_start(update: Update, context):
     if update.effective_chat.type == 'private' and update.effective_user.id == int(os.getenv('ADMIN_ID', 0)):
@@ -385,57 +431,70 @@ async def bot_handler(update: Update, context):
         user = update.effective_user
         text = msg.text.strip() if msg.text else ""
 
-        # 1. 强制点赞 (使用 HTTP 请求，最稳妥的方式)
-        if conf.get('auto_like'):
-            exists = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
-            if exists:
-                # 异步 HTTP 请求点赞，避免 await set_reaction 失败中断后续逻辑
-                token = os.getenv('TOKEN')
-                emoji = conf.get('like_emoji', '❤️')
-                url = f"https://api.telegram.org/bot{token}/setMessageReaction"
-                try:
-                    requests.post(url, json={
-                        "chat_id": msg.chat.id,
-                        "message_id": msg.message_id,
-                        "reaction": [{"type": "emoji", "emoji": emoji}]
-                    }, timeout=1)
-                except: pass
+        # 0. 获取数据库用户对象 (用于点赞、有效期检查)
+        user_db = GroupUser.query.filter_by(group_id=gid, tg_id=user.id).first()
 
-        # 2. 打卡处理
+        # 1. 强制点赞 (HTTP方式)
+        if conf.get('auto_like') and user_db:
+            token = os.getenv('TOKEN')
+            emoji = conf.get('like_emoji', '❤️')
+            url = f"https://api.telegram.org/bot{token}/setMessageReaction"
+            try:
+                requests.post(url, json={
+                    "chat_id": msg.chat.id,
+                    "message_id": msg.message_id,
+                    "reaction": [{"type": "emoji", "emoji": emoji}]
+                }, timeout=1)
+            except: pass
+
+        # 2. 有效期检查 & 禁言
+        if user_db:
+            await check_user_expiration(user_db, msg.chat.id, context, conf)
+
+        # 3. 打卡处理 (精确匹配)
         cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
         if text in cmds:
             if not conf.get('checkin_open'): return
-            u = GroupUser.query.filter_by(group_id=gid, tg_id=user.id).first()
+            
+            # 🆕 需求：打卡指令不删除。
+            # 所以这里不写 delete_message 逻辑。
+
             delay = safe_int(conf.get('checkin_del_time'), 30)
             
-            # 删除用户指令
-            try: context.job_queue.run_once(lambda c: c.job.data.delete(), 3, data=msg)
-            except: pass
-            
-            if not u:
+            if not user_db:
                 r = await msg.reply_html(conf.get('msg_not_registered'))
-            elif u.checkin_time and u.checkin_time.date() == datetime.now().date():
+            elif user_db.checkin_time and user_db.checkin_time.date() == datetime.now().date():
                 r = await msg.reply_html(conf.get('msg_repeat_checkin'))
             else:
-                u.checkin_time = datetime.now()
-                u.online = True
+                user_db.checkin_time = datetime.now()
+                user_db.online = True
                 db.session.commit()
                 r = await msg.reply_html(conf.get('msg_checkin_success'))
             
             context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=r)
             return
 
-        # 3. 智能查询入口
+        # 4. 查询入口
         if conf.get('query_filter_open'):
             q_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
-            matched = next((c for c in q_cmds if text.startswith(c)), None)
             
-            kw = None
-            if matched:
-                kw = text[len(matched):].strip() # 显式指令
+            # 情况A：精确查询指令
+            if text in q_cmds:
+                await query_handler(update, context, gid, None, conf, fields)
+                return
+
+            # 情况B：指令开头筛选 (如 "查询 福田")
+            matched_prefix = next((c for c in q_cmds if text.startswith(c + " ")), None)
+            if matched_prefix:
+                kw = text[len(matched_prefix):].strip()
                 await query_handler(update, context, gid, kw, conf, fields)
-            elif len(text) < 10 and not text.startswith('/'):
-                 # 隐式关键词：不是指令，也不长，尝试搜索
+                return
+
+            # 情况C：智能匹配 (仅在非指令时触发)
+            # 只有当：不以 "/" 开头，且长度 < 10，才尝试去库里搜
+            if len(text) < 10 and not text.startswith('/'):
+                 # ⚠️ 关键逻辑：这里调用 query_handler，如果库里搜不到，它会静默
+                 # 这样就不会导致普通聊天被当成查询
                  await query_handler(update, context, gid, text, conf, fields)
 
 async def run_bot():
