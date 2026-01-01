@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h4 class="fw-bold">选择管理目标</h4>
+        <p class="text-muted">请选择一个群组或频道进入独立工作台。每个群组拥有独立的用户列表和配置。</p>
+    </div>
+</div>
+
+<div class="row g-4">
+    {% for g in groups %}
+    <div class="col-md-6 col-xl-4">
+        <div class="card h-100 shadow-sm border-0 hover-card cursor-pointer" onclick="location.href='/core/group/{{ g.id }}/dashboard'">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="badge {{ 'bg-success' if g.is_active else 'bg-secondary' }}">{{ '运行中' if g.is_active else '未启用' }}</span>
+                    <div class="form-check form-switch" onclick="event.stopPropagation()">
+                        <input class="form-check-input" type="checkbox" onchange="toggleGroup({{ g.id }}, this.checked)" {{ 'checked' if g.is_active }}>
+                    </div>
+                </div>
+                <h5 class="fw-bold text-truncate mb-1">{{ g.title }}</h5>
+                <p class="text-muted small mb-3">ID: {{ g.chat_id }}</p>
+                
+                <div class="d-flex justify-content-between align-items-center mt-4">
+                    <span class="small text-muted">
+                        {% if g.type == 'channel' %}<i class="fa-solid fa-bullhorn me-1"></i> 频道
+                        {% else %}<i class="fa-solid fa-users me-1"></i> 群组{% endif %}
+                    </span>
+                    <button class="btn btn-primary btn-sm rounded-pill px-3">进入管理 <i class="fa-solid fa-arrow-right ms-1"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12 text-center py-5 text-muted">
+        <i class="fa-solid fa-robot fa-3x mb-3"></i>
+        <p>暂无群组。请将机器人拉入群组并发送任意消息。</p>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+    function toggleGroup(id, active) {
+        fetch('/core/api/toggle_group', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id, active: active})
+        });
+    }
+</script>
+<style>
+    .hover-card:hover { transform: translateY(-3px); transition: 0.3s; box-shadow: 0 10px 20px rgba(0,0,0,0.08) !important; }
+</style>
+{% endblock %}
