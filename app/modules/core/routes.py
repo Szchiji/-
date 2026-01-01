@@ -7,6 +7,7 @@ import os, jwt, time, json, asyncio, re, requests, math
 from datetime import datetime, timedelta
 
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
+http = requests.Session()
 
 # --- Context ---
 @core_bp.context_processor
@@ -39,7 +40,7 @@ def get_group_fields(group):
         except: pass
     return DEFAULT_FIELDS
 
-# --- Web Routes (保持不变) ---
+# --- Web Routes (Omitted: Same as before) ---
 @core_bp.route('/')
 def index(): return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
 
@@ -84,7 +85,7 @@ def page_settings(gid):
     fields = get_group_fields(group)
     return render_template('settings.html', page='settings', group=group, conf=conf, fields=fields)
 
-# --- APIs (保持不变) ---
+# --- APIs ---
 @core_bp.route('/api/save_settings', methods=['POST'])
 def api_save_settings():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
@@ -121,12 +122,15 @@ def api_save_user():
             u = GroupUser(group_id=gid, tg_id=tg_id)
             db.session.add(u)
         u.profile_data = json.dumps(d.get('profile', {}), ensure_ascii=False)
+        
+        # 🆕 有效期逻辑
         days = int(d.get('add_days', 0))
         if days:
             now = datetime.now()
             base = u.expiration_date if (u.expiration_date and u.expiration_date > now) else now
             u.expiration_date = base + timedelta(days=days)
             u.is_banned = False 
+            
         db.session.commit()
         return jsonify({"status": "ok"})
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
@@ -186,50 +190,33 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 🤖 机器人逻辑 (绝杀优化版)
+# 🤖 机器人逻辑
 # =======================
 
-# 全局 HTTP Session 提高并发性能
-http = requests.Session()
-
 def do_like(chat_id, message_id, emoji):
-    """强力点赞：使用 Session 和更长的超时时间"""
     token = os.getenv('TOKEN')
-    url = f"https://api.telegram.org/bot{token}/setMessageReaction"
-    try:
-        http.post(url, json={
-            "chat_id": chat_id, 
-            "message_id": message_id, 
-            "reaction": [{"type": "emoji", "emoji": emoji}]
-        }, timeout=(3.05, 5)) # 连接3秒，读取5秒
-    except Exception as e:
-        print(f"[Like Fail] {e}")
+    try: http.post(f"https://api.telegram.org/bot{token}/setMessageReaction", json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": emoji}]}, timeout=(3.05, 5))
+    except: pass
 
 async def check_expiration_and_mute(context, group_id, user_id, chat_id, conf):
     from app import create_app
     with create_app().app_context():
         u = GroupUser.query.filter_by(group_id=group_id, tg_id=int(user_id)).first()
         if not u or not u.expiration_date: return
-        
         now = datetime.now()
-        # 过期禁言
         if u.expiration_date < now and not u.is_banned:
             try: 
                 await context.bot.restrict_chat_member(chat_id=chat_id, user_id=user_id, permissions=ChatPermissions(can_send_messages=False))
                 u.is_banned = True
                 db.session.commit()
                 await context.bot.send_message(chat_id=chat_id, text=conf.get('msg_expired_ban', '⛔️ 过期禁言'), parse_mode='HTML')
-                return True
             except: pass
-        # 续费解禁
         elif u.expiration_date > now and u.is_banned:
             try:
-                await context.bot.restrict_chat_member(chat_id=chat_id, user_id=user_id, 
-                    permissions=ChatPermissions(can_send_messages=True, can_send_media_messages=True, can_send_other_messages=True))
+                await context.bot.restrict_chat_member(chat_id=chat_id, user_id=user_id, permissions=ChatPermissions(can_send_messages=True, can_send_media_messages=True, can_send_other_messages=True))
                 u.is_banned = False
                 db.session.commit()
             except: pass
-    return False
 
 def build_list_text(users, page, per_page, conf, fields, header):
     start = (page - 1) * per_page
@@ -251,13 +238,10 @@ def get_pagination_markup(page, total_pages, kw, conf):
     buttons = []
     nav_row = []
     safe_kw = kw if kw else "None"
-    
-    # 翻页按钮携带页码和关键词
     if page > 1: nav_row.append(InlineKeyboardButton("⬅️ 上页", callback_data=f"pg|{page-1}|{safe_kw}"))
     nav_row.append(InlineKeyboardButton(f"{page}/{total_pages}", callback_data="noop"))
     if page < total_pages: nav_row.append(InlineKeyboardButton("下页 ➡️", callback_data=f"pg|{page+1}|{safe_kw}"))
     if nav_row: buttons.append(nav_row)
-    
     custom_btns = conf.get('custom_buttons', '')
     if custom_btns:
         try:
@@ -272,30 +256,30 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
     with create_app().app_context():
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         base = GroupUser.query.filter(GroupUser.group_id == group_id, GroupUser.checkin_time >= today, GroupUser.online == True)
-        if kw: base = base.filter(GroupUser.profile_data.contains(kw))
-        
-        page_size = safe_int(conf.get('page_size'), 10)
-        total_pages = math.ceil(base.count() / page_size) or 1
-        if page > total_pages: page = total_pages
-        if page < 1: page = 1
-        
-        users = base.order_by(GroupUser.checkin_time.desc()).limit(page_size).offset((page-1)*page_size).all()
-        header = conf.get('msg_filter_header', '🔍 <b>筛选结果：</b>') if kw else conf.get('msg_query_header', '🔍 <b>今日在线：</b>')
+        if kw:
+            base = base.filter(GroupUser.profile_data.contains(kw))
+            header = conf.get('msg_filter_header', '🔍 <b>筛选结果：</b>')
+        else:
+            header = conf.get('msg_query_header', '🔍 <b>今日在线：</b>')
+            
+        users = base.order_by(GroupUser.checkin_time.desc()).all()
         
         if not users:
             text = f"😢 没找到 '{kw}' 的相关用户" if kw else "😢 今日暂无打卡"
             markup = None
         else:
+            page_size = safe_int(conf.get('page_size'), 10)
+            total_pages = math.ceil(len(users) / page_size) or 1
+            if page > total_pages: page = total_pages
+            if page < 1: page = 1
             text = build_list_text(users, page, page_size, conf, fields, header)
             markup = get_pagination_markup(page, total_pages, kw, conf)
-            
         return text, markup, users
 
 async def bot_handler(update: Update, context):
     msg = update.message or update.channel_post
     if not msg: return
     if msg.chat.type not in ['group', 'supergroup', 'channel']: return
-    
     g_info = await get_group_info_safe(update.effective_chat)
     if not g_info or not g_info['is_active']: return
 
@@ -310,7 +294,7 @@ async def bot_handler(update: Update, context):
     text = msg.text.strip() if msg.text else ""
     gid = g_info['id']
 
-    # 1. 点赞与权限
+    # 1. 有效期 & 点赞
     from app import create_app
     with create_app().app_context():
         exists = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
@@ -320,7 +304,7 @@ async def bot_handler(update: Update, context):
             if conf.get('auto_like'):
                 do_like(msg.chat.id, msg.message_id, conf.get('like_emoji', '❤️'))
 
-    # 2. 打卡
+    # 2. 打卡 (精确匹配)
     checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
     if text in checkin_cmds:
         if not conf.get('checkin_open'): return
@@ -338,37 +322,35 @@ async def bot_handler(update: Update, context):
             context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=r)
             return
 
-    # 3. 独立查询逻辑 (取消互斥删除，实现多人独立查询)
-    is_normal_query = conf.get('query_open') and text in [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
-    
-    is_filter_query = False
-    kw = None
-    if conf.get('query_filter_open'):
-        # 1. 显式筛选: "查询 福田"
-        q_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
-        matched = next((c for c in q_cmds if text.startswith(c + " ")), None)
-        if matched:
-            kw = text[len(matched):].strip()
-            is_filter_query = True
-        # 2. 隐式筛选: "福田" (非指令，短文本)
-        elif len(text) < 10 and not text.startswith('/'):
-            kw = text
-            is_filter_query = True
-
-    if is_normal_query or is_filter_query:
-        if is_filter_query and not kw: return 
-        
-        text_resp, markup, users = await do_query_page(msg.chat.id, gid, conf, fields, kw, 1)
-        
-        if is_filter_query and not users: return 
-        
-        # ⚠️ 关键修改：每条消息都是独立的，互不影响
-        # 禁用链接预览，防止刷屏
+    # 3. 普通查询 (精确匹配)
+    query_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
+    if conf.get('query_open') and text in query_cmds:
+        # 执行普通查询 (kw=None)
+        text_resp, markup, _ = await do_query_page(msg.chat.id, gid, conf, fields, None, 1)
+        # 发送并设置自动删除 (保留 disable_web_page_preview)
         sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
-        
-        # 仍然保持自动删除机制，防止消息堆积太多
         del_time = safe_int(conf.get('query_del_time'), 60)
         context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=sent)
+        return
+
+    # 4. 筛选/占位符查询
+    if conf.get('query_filter_open'):
+        kw = None
+        # 4.1 指令前缀匹配 "查询 福田"
+        matched_prefix = next((c for c in query_cmds if text.startswith(c + " ")), None)
+        if matched_prefix:
+            kw = text[len(matched_prefix):].strip()
+        # 4.2 智能匹配 (短文本)
+        elif len(text) < 10 and not text.startswith('/'):
+            kw = text
+        
+        if kw:
+            text_resp, markup, users = await do_query_page(msg.chat.id, gid, conf, fields, kw, 1)
+            # 只有搜到人了才回复，避免普通聊天被干扰
+            if users:
+                sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
+                del_time = safe_int(conf.get('query_del_time'), 60)
+                context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=sent)
 
 # --- 翻页回调 (独立更新) ---
 async def pagination_callback(update: Update, context):
@@ -377,19 +359,15 @@ async def pagination_callback(update: Update, context):
     parts = query.data.split('|')
     page = int(parts[1])
     kw = parts[2] if parts[2] != "None" else None
-    
     g_info = await get_group_info_safe(update.effective_chat)
     if not g_info: return await query.answer("过期")
-    
     class Mock:
         def __init__(self, c, f): self.config=c; self.fields_config=f
     mock_g = Mock(g_info['config'], g_info['fields_config'])
     conf = get_group_conf(mock_g)
     fields = get_group_fields(mock_g)
-    
     text, markup, _ = await do_query_page(update.effective_chat.id, g_info['id'], conf, fields, kw, page)
-    
-    # ⚠️ 只编辑当前这条消息，不影响其他人的消息
+    # 只编辑当前这条消息
     try: 
         await query.edit_message_text(text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
         await query.answer()
