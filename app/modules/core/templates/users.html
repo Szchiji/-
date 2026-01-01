@@ -4,7 +4,7 @@
     <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
         <h6 class="m-0 fw-bold"><i class="fa-solid fa-users me-2"></i>用户列表 ({{ group.title }})</h6>
         <div class="d-flex gap-2">
-            <input class="form-control form-control-sm" placeholder="搜索..." value="{{ q }}" onchange="location.href='?q='+this.value">
+            <input class="form-control form-control-sm" placeholder="搜索..." value="{{ q or '' }}" onchange="location.href='?q='+this.value">
             <button class="btn btn-sm btn-primary fw-bold text-nowrap" onclick="openModal()">
                 <i class="fa-solid fa-plus"></i> 添加用户
             </button>
@@ -23,8 +23,14 @@
                     </td>
                     <td><span class="badge {{ 'bg-success' if u.online else 'bg-secondary' }}">{{ '在线' if u.online else '离线' }}</span></td>
                     <td class="text-end pe-4">
-                        <button class="btn btn-sm btn-outline-info" onclick="pushUser({{ u.id }})"><i class="fa-solid fa-paper-plane"></i></button>
-                        <button class="btn btn-sm btn-outline-primary" onclick='editUser({{ u.tg_id }}, {{ u.profile_data|tojson }})'><i class="fa-solid fa-pen"></i></button>
+                        <button class="btn btn-sm btn-outline-info" onclick="pushUser({{ u.id }})" title="推送到频道"><i class="fa-solid fa-paper-plane"></i></button>
+                        <!-- ⚠️ 关键修复：使用 data-属性传递 JSON -->
+                        <button class="btn btn-sm btn-outline-primary" 
+                                data-tgid="{{ u.tg_id }}" 
+                                data-profile='{{ u.profile_data }}'
+                                onclick="editUser(this)">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
                         <button class="btn btn-sm btn-outline-danger" onclick="delUser({{ u.id }})"><i class="fa-solid fa-trash"></i></button>
                     </td>
                 </tr>
@@ -48,14 +54,15 @@
 <script>
     let myModal = null;
     const fields = {{ fields|tojson }};
-    const currentGroupId = {{ group.id }}; // ⚠️ 显式注入 Group ID
+    const currentGroupId = {{ group.id }}; 
 
     document.addEventListener('DOMContentLoaded', ()=> myModal = new bootstrap.Modal(document.getElementById('userModal')));
 
     function renderFields(data) {
         const con = document.getElementById('modalFields'); con.innerHTML = '';
         fields.forEach(f => {
-            let val = data[f.key] || '', html = '';
+            let val = data[f.key] || '';
+            let html = '';
             if(f.type==='select'){
                 let opts=(f.options||[]).map(o=>`<option value="${o}" ${o==val?'selected':''}>${o}</option>`).join('');
                 html=`<select name="${f.key}" class="form-select"><option value="">请选择...</option>${opts}</select>`;
@@ -64,22 +71,34 @@
         });
     }
 
-    function openModal(){ document.getElementById('userForm').reset(); renderFields({}); myModal.show(); }
-    function editUser(id, d){ document.getElementById('userForm').reset(); document.querySelector('[name=tg_id]').value=id; renderFields(d); myModal.show(); }
+    function openModal(){ 
+        document.getElementById('userForm').reset(); 
+        renderFields({}); 
+        myModal.show(); 
+    }
+
+    // ⚠️ 关键修复：从 data 属性读取，避免引号冲突
+    function editUser(btn){ 
+        document.getElementById('userForm').reset(); 
+        const tgid = btn.getAttribute('data-tgid');
+        const profile = JSON.parse(btn.getAttribute('data-profile'));
+        
+        document.querySelector('[name=tg_id]').value = tgid; 
+        renderFields(profile); 
+        myModal.show(); 
+    }
     
     function saveUser(){
         const fd = new FormData(document.getElementById('userForm'));
         const d = {
             tg_id: fd.get('tg_id'), 
-            group_id: currentGroupId, // ⚠️ 显式传递，防止 Session 丢失
+            group_id: currentGroupId,
             profile: {}
         };
         fields.forEach(f=> d.profile[f.key]=fd.get(f.key));
         
         fetch('/core/api/save_user', {
-            method:'POST', 
-            headers:{'Content-Type':'application/json'}, 
-            body:JSON.stringify(d)
+            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)
         })
         .then(r=>r.json()).then(res=>{ 
             if(res.status==='ok'){
@@ -87,7 +106,7 @@
                 alert('✅ 保存成功'); 
                 location.reload();
             } else {
-                alert('❌ 失败: ' + res.msg); 
+                alert('❌ ' + res.msg); 
             }
         });
     }
