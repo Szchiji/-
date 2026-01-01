@@ -8,12 +8,12 @@
 </div>
 
 <div class="row">
-    <!-- 左侧：基础参数 -->
+    <!-- Left: Parameters -->
     <div class="col-lg-4 mb-4">
         <div class="card shadow-sm border-0 h-100">
             <div class="card-header bg-white fw-bold py-3">交互参数</div>
             <div class="card-body">
-                <!-- 打卡 -->
+                <!-- Check-in -->
                 <div class="form-check form-switch mb-2">
                     <input class="form-check-input" type="checkbox" id="checkin_open" {{ 'checked' if conf.checkin_open }}>
                     <label class="fw-bold">开启打卡</label>
@@ -23,7 +23,7 @@
                     <input id="checkin_cmd" class="form-control" value="{{ conf.checkin_cmd }}" placeholder="打卡, 上班, sign">
                 </div>
                 
-                <!-- 查询 -->
+                <!-- Query -->
                 <div class="form-check form-switch mb-2">
                     <input class="form-check-input" type="checkbox" id="query_open" {{ 'checked' if conf.query_open }}>
                     <label class="fw-bold">开启查询</label>
@@ -41,7 +41,7 @@
 
                 <hr>
                 
-                <!-- 互动 -->
+                <!-- Interaction -->
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <label class="small text-muted">自动点赞</label>
                     <div class="form-check form-switch m-0">
@@ -50,13 +50,12 @@
                 </div>
                 <input id="like_emoji" class="form-control mb-3" value="{{ conf.like_emoji }}" placeholder="❤️">
 
-                <!-- 推送频道 -->
+                <!-- Push Channel -->
                 <div class="mb-3">
                     <label class="small text-muted fw-bold text-success">绑定推送频道</label>
                     <select id="push_channel_id" class="form-select">
                         <option value="">-- 不推送 --</option>
                         {% for c in channels %}
-                        <!-- ⚠️ 关键：确保这里比较的是字符串 -->
                         <option value="{{ c.chat_id }}" {{ 'selected' if str(c.chat_id) == str(conf.push_channel_id) }}>{{ c.title }}</option>
                         {% endfor %}
                     </select>
@@ -68,7 +67,7 @@
         </div>
     </div>
 
-    <!-- 右侧：文案编辑器 -->
+    <!-- Right: Editor -->
     <div class="col-lg-8 mb-4">
         <div class="card shadow-sm border-0 h-100">
             <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
@@ -83,22 +82,21 @@
                 </select>
             </div>
             <div class="card-body d-flex flex-column p-0">
-                <!-- 工具栏 -->
+                <!-- Toolbar -->
                 <div class="p-2 bg-light border-bottom d-flex flex-wrap gap-2 align-items-center">
                     <div class="btn-group bg-white border rounded shadow-sm">
                         <button class="btn btn-sm btn-light" onclick="cmd('bold')" title="加粗"><i class="fa-solid fa-bold"></i></button>
                         <button class="btn btn-sm btn-light" onclick="cmd('italic')" title="斜体"><i class="fa-solid fa-italic"></i></button>
-                        <button class="btn btn-sm btn-light" onclick="link()" title="插入链接"><i class="fa-solid fa-link"></i></button>
+                        <button class="btn btn-sm btn-light" onclick="link()" title="链接"><i class="fa-solid fa-link"></i></button>
                     </div>
                     <div class="vr mx-1"></div>
                     <span class="badge bg-white text-dark border cursor-pointer" onclick="insert('{onlineEmoji}')">🟢表情</span>
                     {% for f in fields %}
                     <span class="badge bg-white text-primary border cursor-pointer" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>
                     {% endfor %}
-                    <span class="badge bg-warning text-dark border cursor-pointer" onclick="insert('{tg_id}')" title="TG用户ID">TG_ID</span>
+                    <span class="badge bg-warning text-dark border cursor-pointer" onclick="insert('{tg_id}')" title="仅推送模板可用">TG_ID</span>
                 </div>
-                
-                <!-- 编辑区 -->
+                <!-- Editor Area -->
                 <div id="editor" class="p-3 flex-grow-1" contenteditable="true" style="outline:none; min-height: 300px; font-size: 15px; line-height: 1.6;"></div>
                 
                 <div class="p-2 border-top bg-light text-end">
@@ -110,7 +108,6 @@
 </div>
 
 <script>
-    // 初始化消息数据
     let msgs = {
         template: `{{ conf.template|safe }}`,
         push_template: `{{ conf.push_template|safe }}`,
@@ -120,7 +117,7 @@
         msg_query_header: `{{ conf.msg_query_header|safe }}`
     };
     
-    // ⚠️ 关键：明确当前群组ID，防止保存时 Session 丢失
+    // Explicitly inject current group ID to prevent saving to wrong group
     const currentGroupId = {{ group.id }};
 
     document.addEventListener('DOMContentLoaded', () => loadMsg());
@@ -131,7 +128,6 @@
     
     function saveTmp() { 
         msgs[document.getElementById('msgSelector').value] = document.getElementById('editor').innerHTML; 
-        // 简单反馈
         const btn = document.querySelector('.btn-secondary');
         const org = btn.innerHTML;
         btn.innerHTML = '已暂存';
@@ -143,10 +139,10 @@
     function link(){ let u=prompt('URL:'); if(u) cmd('createLink',u); }
     
     function saveSettings() {
-        saveTmp(); // 先保存编辑器里的内容
+        saveTmp(); // Save current editor content to js object
         
         const d = {
-            group_id: currentGroupId, // ⚠️ 必须包含 ID
+            group_id: currentGroupId, // CRITICAL: Pass group_id
             config: {
                 ...msgs,
                 checkin_open: document.getElementById('checkin_open').checked,
