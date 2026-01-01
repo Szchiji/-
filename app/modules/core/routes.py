@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, session, jsonify
+from flask import Blueprint, render_template, request, redirect, session, jsonify, url_for
 from app import db
 from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM
 from telegram import Update
@@ -8,9 +8,14 @@ from datetime import datetime, timedelta
 
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
 
-# --- 辅助函数 ---
+# ... (Context Processor 和 辅助函数 保持不变，请保留) ...
+@core_bp.context_processor
+def inject_groups():
+    if session.get('logged_in'):
+        return dict(all_groups=BotGroup.query.order_by(BotGroup.updated_at.desc()).all())
+    return dict(all_groups=[])
+
 def get_group_conf(group):
-    """获取群配置，合并默认值"""
     conf = DEFAULT_SYSTEM.copy()
     if group.config:
         try:
@@ -26,22 +31,14 @@ def get_group_fields(group):
         except: pass
     return DEFAULT_FIELDS
 
-# --- 网页路由 (保持不变，省略部分以节省篇幅，重点在 settings) ---
+# ... (网页路由部分保持不变，省略以节省篇幅，请直接复用上一版) ...
+# ... (API部分保持不变，直到 api_push_user) ...
 
-@core_bp.context_processor
-def inject_context():
-    data = {'all_groups': []}
-    if session.get('logged_in'):
-        data['all_groups'] = BotGroup.query.order_by(BotGroup.updated_at.desc()).all()
-    gid = session.get('current_group_id')
-    if gid:
-        data['current_group'] = BotGroup.query.get(gid)
-    return data
-
+# =======================
+# 🌐 网页路由 (完整保留)
+# =======================
 @core_bp.route('/')
-def index():
-    if not session.get('logged_in'): return render_template('base.html', page='login')
-    return redirect('/core/select_group')
+def index(): return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
 
 @core_bp.route('/select_group')
 def page_select_group():
@@ -82,17 +79,28 @@ def page_settings(gid):
     group = BotGroup.query.get_or_404(gid)
     conf = get_group_conf(group)
     fields = get_group_fields(group)
-    # 获取所有频道供选择推送
-    channels = BotGroup.query.filter_by(type='channel').all()
-    return render_template('settings.html', page='settings', group=group, conf=conf, fields=fields, channels=channels)
+    return render_template('settings.html', page='settings', group=group, conf=conf, fields=fields)
 
-# --- API 路由 (保持不变) ---
+@core_bp.route('/magic_login')
+def magic_login():
+    token = request.args.get('token')
+    try:
+        if jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=['HS256']).get('uid') == int(os.getenv('ADMIN_ID', 0)):
+            session['logged_in'] = True
+            return redirect('/core/select_group')
+    except: pass
+    return "Link Invalid", 403
+
+@core_bp.route('/logout')
+def logout(): session.clear(); return redirect('/core')
+
+# ... (API 部分) ...
+
 @core_bp.route('/api/save_user', methods=['POST'])
 def api_save_user():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     data = request.json
     gid = session.get('current_group_id')
-    if not gid: return jsonify({"status":"err", "msg": "No group selected"})
     try:
         tg_id = int(data.get('tg_id'))
         user = GroupUser.query.filter_by(group_id=gid, tg_id=tg_id).first()
@@ -146,33 +154,66 @@ def api_toggle_group():
         db.session.commit()
     return jsonify({"status": "ok"})
 
-@core_bp.route('/magic_login')
-def magic_login():
-    token = request.args.get('token')
-    try:
-        if jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=['HS256']).get('uid') == int(os.getenv('ADMIN_ID', 0)):
-            session['logged_in'] = True
-            return redirect('/core/select_group')
-    except: pass
-    return "Link Invalid", 403
+# 🆕 修复：推送功能 (增加目标频道ID参数)
+@core_bp.route('/api/push_user', methods=['POST'])
+def api_push_user():
+    if not session.get('logged_in'): return jsonify({"status":"err"}), 403
+    import app
+    
+    uid = request.json.get('id')
+    # 前端需要让用户选择推送到哪个频道，这里简化为推送到当前绑定的“推送频道”
+    # 我们需要在 Settings 页面加一个“推送目标频道”的配置，或者直接在弹窗里选
+    # 这里暂时假设用户配置了 `push_channel_id`
+    
+    user = GroupUser.query.get(uid)
+    group = BotGroup.query.get(user.group_id)
+    conf = get_group_conf(group)
+    
+    target_channel = conf.get('push_channel_id')
+    if not target_channel:
+        return jsonify({"status": "err", "msg": "请先在【功能设置】中填写推送频道ID"})
 
-@core_bp.route('/logout')
-def logout(): session.clear(); return redirect('/core')
+    tpl = conf.get('push_template', '') # 使用推送专属模板
+    fields_map = {f['key']: f['label'] for f in get_group_fields(group)}
+    
+    try:
+        data = json.loads(user.profile_data)
+        line = tpl.replace("{tg_id}", str(user.tg_id)) # 支持 tg_id 变量
+        for k, label in fields_map.items():
+            line = line.replace(f"{{{label}}}", str(data.get(k,'')))
+        
+        # 清理未匹配变量
+        line = re.sub(r'\{.*?\}', '', line)
+        
+        if app.global_bot and app.global_loop:
+            asyncio.run_coroutine_threadsafe(
+                app.global_bot.send_message(chat_id=target_channel, text=line, parse_mode='HTML'),
+                app.global_loop
+            )
+            return jsonify({"status": "ok", "msg": "✅ 已推送"})
+    except Exception as e: return jsonify({"status": "err", "msg": str(e)})
+    return jsonify({"status": "err", "msg": "Bot未连接"} )
+
 
 # =======================
-# 🤖 机器人逻辑 (修复版)
+# 🤖 机器人逻辑
 # =======================
 
 async def record_group(update: Update):
+    # 🆕 关键修复：兼容普通消息和频道消息
     chat = update.effective_chat
+    if not chat: return None
+    
     if chat.type in ['group', 'supergroup', 'channel']:
         from app import create_app
         with create_app().app_context():
             bg = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
             if not bg:
                 bg = BotGroup(chat_id=str(chat.id), is_active=False)
+                # 默认写入全局默认字段配置
                 bg.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
                 db.session.add(bg)
+            
             bg.title = chat.title or chat.username
             bg.type = chat.type
             bg.updated_at = datetime.now()
@@ -185,92 +226,83 @@ async def bot_start(update: Update, context):
         token = jwt.encode({'uid': update.effective_user.id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY'), algorithm='HS256')
         domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')
         url = f"{domain}/core/magic_login?token={token}"
-        await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
+        await update.message.reply_html(f"💼 <b>进入管理后台：</b>\n<a href='{url}'>点击这里</a>")
 
 async def bot_handler(update: Update, context):
-    if not update.message or not update.message.text: return
+    # 🆕 兼容 Channel Post
+    msg = update.message or update.channel_post
+    if not msg or not msg.text: return
     
-    # 1. 识别当前群组
-    # 注意：这里我们必须拿到最新的 group 对象，因为可能刚添加
+    # 1. 发现群组 & 检查是否启用
     group = await record_group(update)
-    # 如果群组未启用（is_active=False），直接忽略
     if not group or not group.is_active: return
 
-    text = update.message.text.strip()
-    user = update.effective_user
+    text = msg.text.strip()
+    user = update.effective_user # 注意：频道消息没有 user，user 为 None
     
-    # 2. 读取本群配置
     conf = get_group_conf(group)
     
-    # 3. 自动点赞
+    # 如果是频道消息，不进行点赞和打卡逻辑，仅记录发现
+    if not user: return 
+
+    # 2. 自动点赞
     if conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
-            # 查 GroupUser 表 (本群用户)
             if GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first():
-                try: await update.message.set_reaction(conf.get('like_emoji', '❤️'))
+                try: await msg.set_reaction(conf.get('like_emoji', '❤️'))
                 except: pass
 
-    # 4. 打卡逻辑
-    # 完全匹配指令
+    # 3. 打卡
     if text == conf.get('checkin_cmd', '打卡'):
         if not conf.get('checkin_open'): return
-        
         from app import create_app
         with create_app().app_context():
             u = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
             delay = int(conf.get('checkin_del_time', 30))
             
             if not u:
-                msg = await update.message.reply_html(conf.get('msg_not_registered'))
+                reply = await msg.reply_html(conf.get('msg_not_registered'))
             elif u.checkin_time and u.checkin_time.date() == datetime.now().date():
-                msg = await update.message.reply_html(conf.get('msg_repeat_checkin'))
+                reply = await msg.reply_html(conf.get('msg_repeat_checkin'))
             else:
                 u.checkin_time = datetime.now()
                 u.online = True
                 db.session.commit()
-                msg = await update.message.reply_html(conf.get('msg_checkin_success'))
+                reply = await msg.reply_html(conf.get('msg_checkin_success'))
             
-            # 删除指令和回复
-            try: context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=update.message)
+            # 自动删除
+            try: context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=msg)
             except: pass
-            context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=msg)
+            context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=reply)
 
-    # 5. 查询逻辑 (支持关键词筛选)
-    # 逻辑：消息以 "查询指令" 开头
+    # 4. 查询 (支持筛选)
     query_cmd = conf.get('query_cmd', '查询')
     if text.startswith(query_cmd):
         if not conf.get('query_open'): return
         
-        # 提取关键词：例如 "查询 福田" -> keyword="福田"
-        keyword = text[len(query_cmd):].strip()
+        # 解析参数: "查询 福田" -> filter_kw="福田"
+        filter_kw = text[len(query_cmd):].strip()
         
         from app import create_app
         with create_app().app_context():
             today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            base_query = GroupUser.query.filter(GroupUser.group_id == group.id, GroupUser.checkin_time >= today, GroupUser.online == True)
             
-            # 基础查询：本群 + 今日打卡 + 在线
-            base_query = GroupUser.query.filter(
-                GroupUser.group_id == group.id, 
-                GroupUser.checkin_time >= today, 
-                GroupUser.online == True
-            )
-            
-            # 如果有关键词，筛选 profile_data
-            if keyword:
-                base_query = base_query.filter(GroupUser.profile_data.contains(keyword))
-            
-            users = base_query.order_by(GroupUser.checkin_time.desc()).all()
-            delay = int(conf.get('checkin_del_time', 30)) # 使用同一个删除时间配置
+            # 🆕 筛选逻辑
+            if filter_kw:
+                # 只有资料中包含关键字的才显示
+                base_query = base_query.filter(GroupUser.profile_data.contains(filter_kw))
+                
+            users = base_query.all()
+            delay = int(conf.get('del_time', 30))
             
             if not users:
-                reply_txt = f"😢 今日暂无符合条件的用户" if keyword else "😢 本群今日暂无打卡"
-                msg = await update.message.reply_text(reply_txt)
+                reply = await msg.reply_text(f"😢 暂无{'符合条件的' if filter_kw else ''}在线用户")
             else:
                 header = conf.get('msg_query_header', '')
                 tpl = conf.get('template', '')
                 fields_map = {f['key']: f['label'] for f in get_group_fields(group)}
-                
                 lines = []
                 for u in users:
                     try:
@@ -280,11 +312,11 @@ async def bot_handler(update: Update, context):
                             line = line.replace(f"{{{l}}}", str(d.get(k,'')))
                         lines.append(re.sub(r'\{.*?\}', '', line))
                     except: continue
-                msg = await update.message.reply_html(header + "\n\n".join(lines))
+                reply = await msg.reply_html(header + "\n\n".join(lines))
             
-            try: context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=update.message)
+            try: context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=msg)
             except: pass
-            context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=msg)
+            context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=reply)
 
 async def run_bot():
     import app 
