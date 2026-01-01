@@ -4,7 +4,7 @@ import os
 
 db = SQLAlchemy()
 
-# 全局变量用于跨文件调用
+# 全局变量
 global_bot = None
 global_loop = None
 
