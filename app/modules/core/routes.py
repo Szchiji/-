@@ -20,6 +20,13 @@ def inject_context():
     return data
 
 # --- 辅助函数 ---
+def safe_int(val, default=30):
+    try:
+        if val is None or str(val).strip() == "": return default
+        return int(val)
+    except:
+        return default
+
 def get_group_conf(group):
     conf = DEFAULT_SYSTEM.copy()
     if group and group.config:
@@ -28,7 +35,6 @@ def get_group_conf(group):
             # 兼容性修复：防止多层嵌套
             if 'config' in c and isinstance(c['config'], dict):
                 c = c['config']
-                
             for k, v in c.items():
                 if v is not None: conf[k] = v
         except: pass
@@ -94,7 +100,7 @@ def page_settings(gid):
     return render_template('settings.html', page='settings', group=group, conf=conf, fields=fields, channels=channels)
 
 # =======================
-# 📡 API 路由 (核心修复)
+# 📡 API 路由
 # =======================
 
 @core_bp.route('/api/save_settings', methods=['POST'])
@@ -106,15 +112,12 @@ def api_save_settings():
     group = BotGroup.query.get(gid)
     
     if group:
-        # ⚠️ 修复：从 'config' 字段提取真实配置
         if 'config' in req_data:
             real_config = req_data['config']
         else:
-            # 兼容旧格式（平铺）
             real_config = req_data.copy()
             if 'group_id' in real_config: del real_config['group_id']
 
-        # 过滤无效值并保存
         clean = {k: v for k, v in real_config.items() if v is not None}
         group.config = json.dumps(clean, ensure_ascii=False)
         db.session.commit()
@@ -128,11 +131,9 @@ def api_save_fields():
     group = BotGroup.query.get(gid)
     
     if group:
-        # 兼容 {fields: [...]} 和 [...]
         data = request.json
         if isinstance(data, dict) and 'fields' in data:
             data = data['fields']
-        
         group.fields_config = json.dumps(data, ensure_ascii=False)
         db.session.commit()
     return jsonify({"status": "ok"})
@@ -225,17 +226,17 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 🤖 机器人逻辑 (防断连版)
+# 🤖 机器人逻辑
 # =======================
 
 async def get_group_info(chat):
-    """纯数据查询，不返回 ORM 对象"""
+    """纯数据查询，防止 DetachedInstanceError"""
     if chat.type not in ['group', 'supergroup', 'channel']: return None
     from app import create_app
     with create_app().app_context():
         bg = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
         if not bg:
-            bg = BotGroup(chat_id=str(chat.id), is_active=False)
+            bg = BotGroup(chat_id=str(chat.id), is_active=False, type=chat.type)
             bg.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
             db.session.add(bg)
         
@@ -257,11 +258,9 @@ async def bot_handler(update: Update, context):
     msg = update.message or update.channel_post
     if not msg: return
     
-    # 1. 获取群组信息 (纯字典)
     g_info = await get_group_info(update.effective_chat)
     if not g_info or not g_info['is_active']: return
 
-    # 构造 Mock 对象用于解析配置
     class MockGroup:
         def __init__(self, c, f): self.config=c; self.fields_config=f
     mock_g = MockGroup(g_info['config'], g_info['fields_config'])
@@ -273,26 +272,25 @@ async def bot_handler(update: Update, context):
     user = update.effective_user
     gid = g_info['id']
 
-    if not user: return # 频道无后续逻辑
+    if not user: return 
 
-    # 2. 自动点赞
+    # 自动点赞
     if conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
-            # 纯查询 ID 存在性
             uid = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
             if uid:
                 try: await msg.set_reaction(conf.get('like_emoji', '❤️'))
                 except: pass
 
-    # 3. 打卡
+    # 打卡
     cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
     if text in cmds:
         if not conf.get('checkin_open'): return
         from app import create_app
         with create_app().app_context():
             u = GroupUser.query.filter_by(group_id=gid, tg_id=user.id).first()
-            delay = int(conf.get('checkin_del_time', 30))
+            delay = safe_int(conf.get('checkin_del_time'), 30)
             
             if not u:
                 reply = await msg.reply_html(conf.get('msg_not_registered'))
@@ -308,7 +306,7 @@ async def bot_handler(update: Update, context):
             except: pass
             context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=reply)
 
-    # 4. 查询
+    # 查询
     q_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
     matched = next((c for c in q_cmds if text.startswith(c)), None)
     
@@ -323,7 +321,7 @@ async def bot_handler(update: Update, context):
             if kw: base = base.filter(GroupUser.profile_data.contains(kw))
             
             users = base.order_by(GroupUser.checkin_time.desc()).all()
-            delay = int(conf.get('checkin_del_time', 30))
+            delay = safe_int(conf.get('checkin_del_time'), 30)
             
             if not users:
                 txt = f"😢 暂无匹配 '{kw}' 的用户" if kw else "😢 本群今日暂无打卡"
