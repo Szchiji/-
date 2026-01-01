@@ -4,7 +4,6 @@
     <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
         <h6 class="m-0 fw-bold"><i class="fa-solid fa-users me-2"></i>用户列表 ({{ group.title }})</h6>
         <div class="d-flex gap-2">
-            <input class="form-control form-control-sm" placeholder="搜索..." value="{{ q or '' }}" onchange="location.href='?q='+this.value">
             <button class="btn btn-sm btn-primary fw-bold text-nowrap" onclick="openModal()">
                 <i class="fa-solid fa-plus"></i> 添加用户
             </button>
@@ -12,7 +11,7 @@
     </div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-            <thead class="bg-light"><tr><th class="ps-4">ID</th><th>资料</th><th>状态</th><th class="text-end pe-4">操作</th></tr></thead>
+            <thead class="bg-light"><tr><th class="ps-4">ID</th><th>资料</th><th>有效期</th><th>状态</th><th class="text-end pe-4">操作</th></tr></thead>
             <tbody>
                 {% for u in users %}
                 <tr id="row_{{ u.id }}">
@@ -21,16 +20,18 @@
                         {% set d = u.profile_data | from_json %}
                         {% for k, v in d.items() %}{% if v %}<span class="badge bg-light text-dark border me-1">{{ v }}</span>{% endif %}{% endfor %}
                     </td>
+                    <td>
+                        {% if u.expiration_date %}
+                            <span class="small text-muted">{{ u.expiration_date.strftime('%Y-%m-%d') }}</span>
+                            {% if u.is_banned %}<span class="badge bg-danger">已禁言</span>{% endif %}
+                        {% else %}
+                            <span class="badge bg-success">永久</span>
+                        {% endif %}
+                    </td>
                     <td><span class="badge {{ 'bg-success' if u.online else 'bg-secondary' }}">{{ '在线' if u.online else '离线' }}</span></td>
                     <td class="text-end pe-4">
-                        <button class="btn btn-sm btn-outline-info" onclick="pushUser({{ u.id }})" title="推送到频道"><i class="fa-solid fa-paper-plane"></i></button>
-                        <!-- ⚠️ 关键修复：使用 data-属性传递 JSON -->
-                        <button class="btn btn-sm btn-outline-primary" 
-                                data-tgid="{{ u.tg_id }}" 
-                                data-profile='{{ u.profile_data }}'
-                                onclick="editUser(this)">
-                            <i class="fa-solid fa-pen"></i>
-                        </button>
+                        <button class="btn btn-sm btn-outline-info" onclick="pushUser({{ u.id }})"><i class="fa-solid fa-paper-plane"></i></button>
+                        <button class="btn btn-sm btn-outline-primary" onclick="editUser({{ u.id }}, {{ u.tg_id }})"><i class="fa-solid fa-pen"></i></button>
                         <button class="btn btn-sm btn-outline-danger" onclick="delUser({{ u.id }})"><i class="fa-solid fa-trash"></i></button>
                     </td>
                 </tr>
@@ -40,12 +41,30 @@
     </div>
 </div>
 
+<!-- Modal -->
 <div class="modal fade" id="userModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered"><form class="modal-content" id="userForm" onsubmit="return false">
         <div class="modal-header bg-light"><h5 class="modal-title fw-bold">用户编辑</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
-            <div class="mb-3"><label class="small text-muted">Telegram ID</label><input type="number" name="tg_id" class="form-control" required></div>
-            <div id="modalFields" class="row g-2"></div>
+            <div class="mb-3">
+                <label class="small text-muted fw-bold">Telegram ID</label>
+                <input type="number" name="tg_id" class="form-control" required placeholder="请输入数字ID">
+            </div>
+            
+            <!-- 动态字段区 -->
+            <div id="modalFields" class="row g-2 mb-3"></div>
+            
+            <hr>
+            
+            <!-- 🆕 有效期设置 -->
+            <div class="mb-3">
+                <label class="small text-muted fw-bold text-success">增加有效期 (天)</label>
+                <input type="number" name="add_days" class="form-control" placeholder="0">
+                <div class="form-text small">
+                    输入天数以延长有效期。输入 0 或留空则不改变。<br>
+                    如果是新用户，0 表示永久有效。
+                </div>
+            </div>
         </div>
         <div class="modal-footer"><button class="btn btn-primary w-100" onclick="saveUser()">保存</button></div>
     </form></div>
@@ -54,15 +73,16 @@
 <script>
     let myModal = null;
     const fields = {{ fields|tojson }};
-    const currentGroupId = {{ group.id }}; 
+    const currentGroupId = {{ group.id }};
+    const userMap = {};
+    {% for u in users %}userMap[{{ u.id }}] = {{ u.profile_data | safe }};{% endfor %}
 
     document.addEventListener('DOMContentLoaded', ()=> myModal = new bootstrap.Modal(document.getElementById('userModal')));
 
     function renderFields(data) {
         const con = document.getElementById('modalFields'); con.innerHTML = '';
         fields.forEach(f => {
-            let val = data[f.key] || '';
-            let html = '';
+            let val = data[f.key] || '', html = '';
             if(f.type==='select'){
                 let opts=(f.options||[]).map(o=>`<option value="${o}" ${o==val?'selected':''}>${o}</option>`).join('');
                 html=`<select name="${f.key}" class="form-select"><option value="">请选择...</option>${opts}</select>`;
@@ -73,45 +93,33 @@
 
     function openModal(){ 
         document.getElementById('userForm').reset(); 
+        document.querySelector('[name=tg_id]').readOnly = false;
         renderFields({}); 
         myModal.show(); 
     }
-
-    // ⚠️ 关键修复：从 data 属性读取，避免引号冲突
-    function editUser(btn){ 
+    
+    function editUser(uid, tgid){ 
         document.getElementById('userForm').reset(); 
-        const tgid = btn.getAttribute('data-tgid');
-        const profile = JSON.parse(btn.getAttribute('data-profile'));
-        
-        document.querySelector('[name=tg_id]').value = tgid; 
-        renderFields(profile); 
+        const inp = document.querySelector('[name=tg_id]');
+        inp.value = tgid; 
+        inp.readOnly = true; // 编辑时锁定ID
+        renderFields(userMap[uid] || {}); 
         myModal.show(); 
     }
     
     function saveUser(){
         const fd = new FormData(document.getElementById('userForm'));
-        const d = {
-            tg_id: fd.get('tg_id'), 
-            group_id: currentGroupId,
-            profile: {}
-        };
+        const d = { group_id: currentGroupId, tg_id: fd.get('tg_id'), add_days: fd.get('add_days'), profile: {} };
         fields.forEach(f=> d.profile[f.key]=fd.get(f.key));
         
-        fetch('/core/api/save_user', {
-            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)
-        })
+        fetch('/core/api/save_user', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)})
         .then(r=>r.json()).then(res=>{ 
-            if(res.status==='ok'){
-                myModal.hide();
-                alert('✅ 保存成功'); 
-                location.reload();
-            } else {
-                alert('❌ ' + res.msg); 
-            }
+            if(res.status==='ok'){ alert('✅ 保存成功'); location.reload(); }
+            else alert('❌ ' + res.msg); 
         });
     }
     
-    function delUser(id){ if(confirm('确定删除?')) fetch('/core/api/delete_user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(()=>{location.reload();}); }
-    function pushUser(id){ if(confirm('推送到频道?')) fetch('/core/api/push_user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(r=>r.json()).then(d=>alert(d.msg)); }
+    function delUser(id){ if(confirm('确定删除?')) fetch('/core/api/delete_user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(()=>location.reload()); }
+    function pushUser(id){ if(confirm('推送?')) fetch('/core/api/push_user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(r=>r.json()).then(d=>alert(d.msg)); }
 </script>
 {% endblock %}
