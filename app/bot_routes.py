@@ -2,7 +2,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from .models import db, User, DEFAULT_FIELDS, DEFAULT_SYSTEM
 from .utils import get_conf
-from . import global_bot, global_loop
 import os
 import jwt
 import time
@@ -25,7 +24,7 @@ async def dynamic_handler(update: Update, context):
 
     if text == sys.get('checkin_cmd'):
         if not sys.get('checkin_open'): return
-        with db.session.no_autoflush: # 简化上下文
+        with db.session.no_autoflush:
             u = User.query.filter_by(tg_id=user.id).first()
             if not u: return await update.message.reply_text("⚠️ 未认证")
             u.checkin_time = datetime.now()
@@ -61,7 +60,6 @@ async def run_bot():
     if not token: return
     app_bot = Application.builder().token(token).build()
     
-    # 赋值给全局变量供 Flask 使用
     app.global_bot = app_bot.bot
     app.global_loop = asyncio.get_running_loop()
     
