@@ -20,14 +20,10 @@ class GroupUser(db.Model):
     group_id = db.Column(db.Integer, db.ForeignKey('bot_groups.id'), index=True)
     tg_id = db.Column(db.BigInteger)
     profile_data = db.Column(db.Text, default='{}')
-    
-    # 🆕 有效期控制
-    expiration_date = db.Column(db.DateTime, nullable=True) # 到期时间
-    is_banned = db.Column(db.Boolean, default=False)        # 是否已被机器人禁言
-    
+    expiration_date = db.Column(db.DateTime, nullable=True)
+    is_banned = db.Column(db.Boolean, default=False)
     checkin_time = db.Column(db.DateTime)
     online = db.Column(db.Boolean, default=False)
-    
     __table_args__ = (db.UniqueConstraint('group_id', 'tg_id', name='_group_user_uc'),)
 
 DEFAULT_FIELDS = [
@@ -37,7 +33,8 @@ DEFAULT_FIELDS = [
 
 DEFAULT_SYSTEM = {
     "checkin_open": True, "checkin_cmd": "打卡", 
-    "query_cmd": "查询", "query_filter_open": True,
+    "query_open": True, "query_cmd": "查询", # 🆕 普通查询开关
+    "query_filter_open": True,             # 🆕 筛选查询开关
     "checkin_del_time": 30, 
     "query_del_time": 60,
     "page_size": 10,
@@ -48,9 +45,8 @@ DEFAULT_SYSTEM = {
     "msg_repeat_checkin": "🔄 <b>今天已打卡</b>", 
     "msg_query_header": "🔍 <b>今日在线用户：</b>\n",
     "msg_filter_header": "🔍 <b>筛选结果：</b>\n",
-    "msg_expired_ban": "⛔️ <b>您的认证已过期，已被暂时禁言。请联系管理员续费。</b>", # 🆕 过期提示
+    "msg_expired_ban": "⛔️ <b>您的认证已过期，已被暂时禁言。请联系管理员续费。</b>",
     "template": "{onlineEmoji} {昵称} | {地区}",
     "push_template": "<b>👤 名片推送</b>\n昵称：{昵称}\n<a href='tg://user?id={tg_id}'>联系我</a>",
-    "custom_btn_text": "", 
-    "custom_btn_url": ""
+    "custom_buttons": "[]" # 🆕 初始化为空数组
 }
