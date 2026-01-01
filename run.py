@@ -19,11 +19,10 @@ def start_bot_loop():
 
 if __name__ == '__main__':
     with app.app_context():
-        # ⚠️⚠️⚠️ 强制重置数据库结构 (解决 column does not exist 报错)
-        # 部署成功运行一次后，建议把这行注释掉，否则每次重启都会丢数据
-        db.drop_all() 
+        # ⚠️⚠️⚠️ 之前让你加的 drop_all 必须注释掉或删除！
+        # db.drop_all()  <-- 删掉这一行！！！
         db.create_all()
-        print("✅ 数据库已重置，新字段已生效", flush=True)
+        print("✅ 数据库已就绪", flush=True)
     
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
