@@ -1,83 +1,117 @@
 {% extends "base.html" %}
 {% block content %}
+<!-- 主设置区域 -->
 <div class="row">
     <!-- 打卡配置 -->
     <div class="col-md-6 mb-4">
-        <div class="card h-100 shadow-sm">
-            <div class="card-header bg-white fw-bold">打卡配置</div>
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-header bg-white fw-bold text-primary py-3">打卡配置</div>
             <div class="card-body">
-                <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="checkin_open" {{ 'checked' if sys.checkin_open }}><label>开启打卡</label></div>
-                
-                <!-- 🆕 下拉选择打卡群 -->
+                <div class="form-check form-switch mb-3 p-2 bg-light rounded">
+                    <input class="form-check-input ms-0 me-2" type="checkbox" id="checkin_open" {{ 'checked' if sys.checkin_open }}>
+                    <label class="fw-bold">开启打卡功能</label>
+                </div>
                 <div class="mb-3">
-                    <label class="small fw-bold text-primary">绑定打卡群</label>
-                    <select id="checkin_chat_id" class="form-select">
-                        <option value="">-- 不限制 (所有群可用) --</option>
-                        {% for g in groups %}
-                        <option value="{{ g.id }}" {{ 'selected' if str(g.id) == str(sys.checkin_chat_id) else '' }}>{{ g.title }} ({{ g.id }})</option>
-                        {% endfor %}
-                    </select>
-                    {% if not groups %}
-                    <div class="form-text text-danger small"><i class="fa-solid fa-circle-exclamation"></i> 暂未发现群组。请将机器人拉入群并设置为管理员，然后在群内任意发言。</div>
-                    {% endif %}
+                    <label class="small text-muted">打卡指令</label>
+                    <input id="checkin_cmd" class="form-control" value="{{ sys.checkin_cmd }}">
                 </div>
-
-                <div class="mb-3"><label class="small text-muted">指令</label><input id="checkin_cmd" class="form-control" value="{{ sys.checkin_cmd }}"></div>
+                
+                <label class="small text-muted fw-bold mb-2">提示消息文案</label>
                 <div class="d-grid gap-2 mb-3">
-                    <button class="btn btn-outline-primary text-start" onclick="openEditor('msg_checkin_success','打卡成功消息')">打卡成功消息 <span class="float-end small">修改</span></button>
-                    <button class="btn btn-outline-danger text-start" onclick="openEditor('msg_not_registered','未认证消息')">未认证消息 <span class="float-end small">修改</span></button>
-                    <button class="btn btn-outline-secondary text-start" onclick="openEditor('msg_repeat_checkin','重复消息')">重复打卡消息 <span class="float-end small">修改</span></button>
+                    <button class="btn btn-light border text-start" onclick="openEditor('msg_checkin_success','打卡成功消息')">
+                        ✅ 打卡成功消息 <i class="fa-solid fa-pen float-end mt-1 text-muted"></i>
+                    </button>
+                    <button class="btn btn-light border text-start" onclick="openEditor('msg_not_registered','未认证提示')">
+                        ⚠️ 未认证提示 <i class="fa-solid fa-pen float-end mt-1 text-muted"></i>
+                    </button>
+                    <button class="btn btn-light border text-start" onclick="openEditor('msg_repeat_checkin','重复打卡提示')">
+                        🔄 重复打卡提示 <i class="fa-solid fa-pen float-end mt-1 text-muted"></i>
+                    </button>
                 </div>
-                <div class="mb-3"><label class="small text-muted">指令删除时间(s)</label><input type="number" id="checkin_del_time" class="form-control" value="{{ sys.checkin_del_time }}"></div>
-                <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if sys.auto_like }}><label>认证用户点赞 (表情:<input id="like_emoji" value="{{ sys.like_emoji }}" style="width:30px;border:none"> )</label></div>
+                <div class="row g-2 align-items-center mt-4">
+                    <div class="col-8"><label class="small text-muted">指令自动删除时间(秒)</label></div>
+                    <div class="col-4"><input type="number" id="checkin_del_time" class="form-control form-control-sm" value="{{ sys.checkin_del_time }}"></div>
+                </div>
             </div>
         </div>
     </div>
     
     <!-- 查询配置 -->
     <div class="col-md-6 mb-4">
-        <div class="card h-100 shadow-sm">
-            <div class="card-header bg-white fw-bold">查询与推送</div>
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-header bg-white fw-bold text-success py-3">查询配置</div>
             <div class="card-body">
-                <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="query_open" {{ 'checked' if sys.query_open }}><label>开启查询</label></div>
-                
-                <!-- 🆕 下拉选择推送频道 -->
+                <div class="form-check form-switch mb-3 p-2 bg-light rounded">
+                    <input class="form-check-input ms-0 me-2" type="checkbox" id="query_open" {{ 'checked' if sys.query_open }}>
+                    <label class="fw-bold">开启查询功能</label>
+                </div>
                 <div class="mb-3">
-                    <label class="small fw-bold text-success">绑定推送频道 (用于推送用户卡片)</label>
-                    <select id="push_channel_id" class="form-select">
-                        <option value="">-- 未选择 --</option>
-                        {% for c in channels %}
-                        <option value="{{ c.id }}" {{ 'selected' if str(c.id) == str(sys.push_channel_id) else '' }}>{{ c.title }} ({{ c.id }})</option>
-                        {% endfor %}
-                    </select>
-                    {% if not channels %}
-                    <div class="form-text text-danger small"><i class="fa-solid fa-circle-exclamation"></i> 暂未发现频道。请将机器人拉入频道并设为管理员。</div>
-                    {% endif %}
+                    <label class="small text-muted">查询指令</label>
+                    <input id="query_cmd" class="form-control" value="{{ sys.query_cmd }}">
                 </div>
 
-                <div class="mb-3"><label class="small text-muted">查询指令</label><input id="query_cmd" class="form-control" value="{{ sys.query_cmd }}"></div>
+                <label class="small text-muted fw-bold mb-2">显示模板</label>
                 <div class="d-grid gap-2 mb-3">
-                    <button class="btn btn-outline-success text-start" onclick="openEditor('msg_query_header','消息头')">列表抬头 <span class="float-end small">修改</span></button>
-                    <button class="btn btn-outline-dark text-start" onclick="openEditor('template','模板')">用户模板 <span class="float-end small">修改</span></button>
+                    <button class="btn btn-light border text-start" onclick="openEditor('msg_query_header','列表抬头内容')">
+                        📝 列表抬头内容 <i class="fa-solid fa-pen float-end mt-1 text-muted"></i>
+                    </button>
+                    <button class="btn btn-light border text-start" onclick="openEditor('template','单用户展示模板')">
+                        👤 单用户展示模板 <i class="fa-solid fa-pen float-end mt-1 text-muted"></i>
+                    </button>
                 </div>
-                <div class="mb-3"><label class="small text-muted">指令删除时间(s)</label><input type="number" id="query_del_time" class="form-control" value="{{ sys.query_del_time }}"></div>
+                
+                <div class="row g-2 mb-2">
+                    <div class="col-6"><label class="small text-muted">在线表情</label><input id="online_emoji" class="form-control text-center" value="{{ sys.online_emoji }}"></div>
+                    <div class="col-6"><label class="small text-muted">离线表情</label><input id="offline_emoji" class="form-control text-center" value="{{ sys.offline_emoji }}"></div>
+                </div>
             </div>
         </div>
     </div>
 </div>
-<button class="btn btn-primary w-100 fw-bold mb-5" onclick="saveAll()">保存所有设置</button>
 
-<!-- 弹窗 & 隐藏域 (保持不变) -->
-<div class="modal fade" id="editorModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
-    <div class="modal-header"><h6 class="modal-title">编辑</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
-    <div class="modal-body">
-        <div class="mb-2"><small>变量:</small> <span class="badge bg-light text-dark border cursor-pointer" onclick="insert('{onlineEmoji}')">表情</span> {% for f in fields %}<span class="badge bg-light text-primary border cursor-pointer" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>{% endfor %}</div>
-        <div class="btn-group w-100 mb-2 border"><button class="btn btn-sm btn-light" onclick="cmd('bold')">B</button><button class="btn btn-sm btn-light" onclick="link()">🔗</button></div>
-        <div id="richEditor" class="form-control" contenteditable="true" style="min-height:200px;outline:none"></div>
+<div class="fixed-bottom bg-white border-top p-3 shadow" style="left: 260px;">
+    <button class="btn btn-primary w-100 fw-bold" onclick="saveAll()">保存所有设置</button>
+</div>
+
+<!-- 仿截图风格的编辑器 Modal -->
+<div class="modal fade" id="editorModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title fw-bold">编辑文本</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <!-- 变量区 (仿截图风格) -->
+                <div class="p-3 border-bottom bg-light">
+                    <div class="d-flex flex-wrap gap-3" style="font-size: 14px;">
+                        <span class="text-muted fw-bold">插入变量:</span>
+                        <span class="cursor-pointer text-dark hover-blue" onclick="insert('{onlineEmoji}')">在线表情</span>
+                        {% for f in fields %}
+                        <span class="cursor-pointer text-dark hover-blue" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                <!-- 工具栏 -->
+                <div class="px-3 py-2 border-bottom d-flex gap-2">
+                    <button class="btn btn-sm btn-light" onclick="cmd('bold')"><i class="fa-solid fa-bold"></i></button>
+                    <button class="btn btn-sm btn-light" onclick="cmd('italic')"><i class="fa-solid fa-italic"></i></button>
+                    <button class="btn btn-sm btn-light" onclick="cmd('underline')"><i class="fa-solid fa-underline"></i></button>
+                    <div class="vr"></div>
+                    <button class="btn btn-sm btn-light" onclick="link()"><i class="fa-solid fa-link"></i></button>
+                    <button class="btn btn-sm btn-light" onclick="cmd('removeFormat')"><i class="fa-solid fa-eraser"></i></button>
+                </div>
+                <!-- 编辑区 -->
+                <div id="richEditor" class="p-3" contenteditable="true" style="min-height: 200px; outline: none; font-size: 15px; line-height: 1.6;"></div>
+            </div>
+            <div class="modal-footer py-2">
+                <button class="btn btn-primary px-4" onclick="saveEd()">确定</button>
+            </div>
+        </div>
     </div>
-    <div class="modal-footer"><button class="btn btn-primary" onclick="saveEd()">确定</button></div>
-</div></div></div>
+</div>
 
+<!-- 隐藏域 -->
 <div style="display:none">
     <textarea id="v_msg_checkin_success">{{ sys.msg_checkin_success }}</textarea>
     <textarea id="v_msg_not_registered">{{ sys.msg_not_registered }}</textarea>
@@ -89,34 +123,45 @@
 <script>
     let cur='', modal=null;
     document.addEventListener('DOMContentLoaded', ()=> modal = new bootstrap.Modal(document.getElementById('editorModal')));
-    function openEditor(k,t){ cur=k; document.querySelector('.modal-title').innerText=t; document.getElementById('richEditor').innerHTML=document.getElementById('v_'+k).value; modal.show(); }
+    
+    function openEditor(k,t){ 
+        cur=k; 
+        document.querySelector('.modal-title').innerText=t; 
+        document.getElementById('richEditor').innerHTML=document.getElementById('v_'+k).value; 
+        modal.show(); 
+    }
+    
     function saveEd(){ document.getElementById('v_'+cur).value=document.getElementById('richEditor').innerHTML; modal.hide(); }
     function cmd(c,v=null){ document.getElementById('richEditor').focus(); document.execCommand(c,false,v); }
-    function insert(t){ cmd('insertText',t); }
-    function link(){ let u=prompt('Url:'); if(u) cmd('createLink',u); }
+    function insert(t){ cmd('insertText', t); } // 直接插入变量名
+    function link(){ let u=prompt('链接:'); if(u) cmd('createLink',u); }
     
     function saveAll(){
         const d = {
             checkin_open: document.getElementById('checkin_open').checked, 
-            checkin_chat_id: document.getElementById('checkin_chat_id').value, // 🆕 获取下拉框的值
             checkin_cmd: document.getElementById('checkin_cmd').value,
-            checkin_del_time: document.getElementById('checkin_del_time').value, 
-            auto_like: document.getElementById('auto_like').checked, 
-            like_emoji: document.getElementById('like_emoji').value,
+            checkin_del_time: document.getElementById('checkin_del_time').value,
             
             query_open: document.getElementById('query_open').checked, 
-            query_cmd: document.getElementById('query_cmd').value, 
-            query_del_time: document.getElementById('query_del_time').value,
-            push_channel_id: document.getElementById('push_channel_id').value, // 🆕 获取下拉框的值
+            query_cmd: document.getElementById('query_cmd').value,
             
             msg_checkin_success: document.getElementById('v_msg_checkin_success').value, 
             msg_not_registered: document.getElementById('v_msg_not_registered').value,
             msg_repeat_checkin: document.getElementById('v_msg_repeat_checkin').value, 
             msg_query_header: document.getElementById('v_msg_query_header').value, 
             template: document.getElementById('v_template').value,
-            online_emoji: "{{ sys.online_emoji }}", offline_emoji: "{{ sys.offline_emoji }}"
+            
+            online_emoji: document.getElementById('online_emoji').value, 
+            offline_emoji: document.getElementById('offline_emoji').value,
+            auto_like: true, like_emoji: "❤️", // 默认开启
+            push_channel_id: "{{ sys.push_channel_id }}" 
         };
-        fetch('/core/api/save_system', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)}).then(()=>alert('✅ 保存成功'));
+        fetch('/core/api/save_system', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)})
+        .then(()=>alert('✅ 保存成功'));
     }
 </script>
+<style>
+    .hover-blue:hover { color: #0d6efd !important; text-decoration: underline; }
+    @media (max-width: 768px) { .fixed-bottom { left: 0 !important; } }
+</style>
 {% endblock %}
