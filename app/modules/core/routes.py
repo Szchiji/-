@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
 http = requests.Session()
 
-# --- Context ---
+# --- Context & Helpers (Unchanged) ---
 @core_bp.context_processor
 def inject_context():
     data = {'all_groups': []}
@@ -40,7 +40,7 @@ def get_group_fields(group):
         except: pass
     return DEFAULT_FIELDS
 
-# --- Web Routes (Omitted: Same as before) ---
+# --- Web Routes (Unchanged) ---
 @core_bp.route('/')
 def index(): return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
 
@@ -123,7 +123,6 @@ def api_save_user():
             db.session.add(u)
         u.profile_data = json.dumps(d.get('profile', {}), ensure_ascii=False)
         
-        # 🆕 有效期逻辑
         days = int(d.get('add_days', 0))
         if days:
             now = datetime.now()
@@ -195,7 +194,9 @@ def logout(): session.clear(); return redirect('/core')
 
 def do_like(chat_id, message_id, emoji):
     token = os.getenv('TOKEN')
-    try: http.post(f"https://api.telegram.org/bot{token}/setMessageReaction", json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": emoji}]}, timeout=(3.05, 5))
+    try: 
+        requests.post(f"https://api.telegram.org/bot{token}/setMessageReaction", 
+            json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": emoji}]}, timeout=(3.05, 5))
     except: pass
 
 async def check_expiration_and_mute(context, group_id, user_id, chat_id, conf):
@@ -245,9 +246,14 @@ def get_pagination_markup(page, total_pages, kw, conf):
     custom_btns = conf.get('custom_buttons', '')
     if custom_btns:
         try:
-            for btn in json.loads(custom_btns):
-                if btn.get('text') and btn.get('url'):
-                    buttons.append([InlineKeyboardButton(btn['text'], url=btn['url'])])
+            btn_list = json.loads(custom_btns)
+            row = []
+            for btn in btn_list:
+                row.append(InlineKeyboardButton(btn['text'], url=btn['url']))
+                if len(row) == 2:
+                    buttons.append(row)
+                    row = []
+            if row: buttons.append(row)
         except: pass
     return InlineKeyboardMarkup(buttons)
 
@@ -266,15 +272,15 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
         
         if not users:
             text = f"😢 没找到 '{kw}' 的相关用户" if kw else "😢 今日暂无打卡"
-            markup = None
-        else:
-            page_size = safe_int(conf.get('page_size'), 10)
-            total_pages = math.ceil(len(users) / page_size) or 1
-            if page > total_pages: page = total_pages
-            if page < 1: page = 1
-            text = build_list_text(users, page, page_size, conf, fields, header)
-            markup = get_pagination_markup(page, total_pages, kw, conf)
-        return text, markup, users
+            return text, None
+        
+        page_size = safe_int(conf.get('page_size'), 10)
+        total_pages = math.ceil(len(users) / page_size) or 1
+        if page > total_pages: page = total_pages
+        if page < 1: page = 1
+        text = build_list_text(users, page, page_size, conf, fields, header)
+        markup = get_pagination_markup(page, total_pages, kw, conf)
+        return text, markup
 
 async def bot_handler(update: Update, context):
     msg = update.message or update.channel_post
@@ -288,86 +294,88 @@ async def bot_handler(update: Update, context):
     mock_g = Mock(g_info['config'], g_info['fields_config'])
     conf = get_group_conf(mock_g)
     fields = get_group_fields(mock_g)
+    gid = g_info['id']
     
     if not update.effective_user: return
     user = update.effective_user
     text = msg.text.strip() if msg.text else ""
-    gid = g_info['id']
 
-    # 1. 有效期 & 点赞
+    user_db = None
     from app import create_app
     with create_app().app_context():
-        exists = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
-        if exists:
-            if conf.get('auto_mute_expired'):
-                if await check_expiration_and_mute(context, gid, user.id, msg.chat.id, conf): return
-            if conf.get('auto_like'):
-                do_like(msg.chat.id, msg.message_id, conf.get('like_emoji', '❤️'))
+        user_db = GroupUser.query.filter_by(group_id=gid, tg_id=user.id).first()
+        if user_db:
+            if conf.get('auto_mute_expired'): await check_expiration_and_mute(context, gid, user.id, msg.chat.id, conf)
+            if conf.get('auto_like'): do_like(msg.chat.id, msg.message_id, conf.get('like_emoji', '❤️'))
 
-    # 2. 打卡 (精确匹配)
+    # 打卡
     checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
     if text in checkin_cmds:
         if not conf.get('checkin_open'): return
-        with create_app().app_context():
-            u = GroupUser.query.filter_by(group_id=gid, tg_id=int(user.id)).first()
-            if not u: r = await msg.reply_html(conf.get('msg_not_registered'))
-            elif u.checkin_time and u.checkin_time.date() == datetime.now().date(): r = await msg.reply_html(conf.get('msg_repeat_checkin'))
-            else:
+        
+        if not user_db:
+            r = await msg.reply_html(conf.get('msg_not_registered'))
+        elif user_db.checkin_time and user_db.checkin_time.date() == datetime.now().date():
+            r = await msg.reply_html(conf.get('msg_repeat_checkin'))
+        else:
+            with create_app().app_context():
+                u = GroupUser.query.filter_by(group_id=gid, tg_id=user.id).first()
                 u.checkin_time = datetime.now()
                 u.online = True
                 db.session.commit()
-                r = await msg.reply_html(conf.get('msg_checkin_success'))
-            
-            delay = safe_int(conf.get('checkin_del_time'), 30)
-            context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=r)
-            return
-
-    # 3. 普通查询 (精确匹配)
-    query_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
-    if conf.get('query_open') and text in query_cmds:
-        # 执行普通查询 (kw=None)
-        text_resp, markup, _ = await do_query_page(msg.chat.id, gid, conf, fields, None, 1)
-        # 发送并设置自动删除 (保留 disable_web_page_preview)
-        sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
-        del_time = safe_int(conf.get('query_del_time'), 60)
-        context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=sent)
+            r = await msg.reply_html(conf.get('msg_checkin_success'))
+        
+        # ⚠️ 使用 checkin_del_time
+        context.job_queue.run_once(lambda c: c.job.data.delete(), safe_int(conf.get('checkin_del_time'), 30), data=r)
         return
 
-    # 4. 筛选/占位符查询
-    if conf.get('query_filter_open'):
-        kw = None
-        # 4.1 指令前缀匹配 "查询 福田"
-        matched_prefix = next((c for c in query_cmds if text.startswith(c + " ")), None)
-        if matched_prefix:
-            kw = text[len(matched_prefix):].strip()
-        # 4.2 智能匹配 (短文本)
-        elif len(text) < 10 and not text.startswith('/'):
-            kw = text
-        
-        if kw:
-            text_resp, markup, users = await do_query_page(msg.chat.id, gid, conf, fields, kw, 1)
-            # 只有搜到人了才回复，避免普通聊天被干扰
-            if users:
-                sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
-                del_time = safe_int(conf.get('query_del_time'), 60)
-                context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=sent)
+    # 普通查询
+    query_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
+    if text in query_cmds:
+        if not conf.get('query_open'): return
+        text_resp, markup = await do_query_page(msg.chat.id, gid, conf, fields, None, 1)
+        sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
+        # ⚠️ 使用 query_del_time
+        context.job_queue.run_once(lambda c: c.job.data.delete(), safe_int(conf.get('query_del_time'), 60), data=sent)
+        return
 
-# --- 翻页回调 (独立更新) ---
+    # 筛选查询
+    matched_prefix = next((c for c in query_cmds if text.startswith(c + " ")), None)
+    kw = None
+    if matched_prefix:
+        kw = text[len(matched_prefix):].strip()
+    elif conf.get('query_filter_open') and len(text) < 10 and not text.startswith('/'):
+        kw = text
+    
+    if kw:
+        if not conf.get('query_filter_open'): return
+        text_resp, markup = await do_query_page(msg.chat.id, gid, conf, fields, kw, 1)
+        if not markup and ("没找到" in text_resp or "暂无" in text_resp): return 
+
+        sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
+        # ⚠️ 使用 query_del_time
+        context.job_queue.run_once(lambda c: c.job.data.delete(), safe_int(conf.get('query_del_time'), 60), data=sent)
+
+# --- 翻页 ---
 async def pagination_callback(update: Update, context):
     query = update.callback_query
     if query.data == "noop": return await query.answer()
-    parts = query.data.split('|')
+    
+    parts = query.data.split('|') 
     page = int(parts[1])
     kw = parts[2] if parts[2] != "None" else None
+    
     g_info = await get_group_info_safe(update.effective_chat)
     if not g_info: return await query.answer("过期")
+    
     class Mock:
         def __init__(self, c, f): self.config=c; self.fields_config=f
     mock_g = Mock(g_info['config'], g_info['fields_config'])
     conf = get_group_conf(mock_g)
     fields = get_group_fields(mock_g)
-    text, markup, _ = await do_query_page(update.effective_chat.id, g_info['id'], conf, fields, kw, page)
-    # 只编辑当前这条消息
+    
+    text, markup = await do_query_page(update.effective_chat.id, g_info['id'], conf, fields, kw, page)
+    
     try: 
         await query.edit_message_text(text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
         await query.answer()
