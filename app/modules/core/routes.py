@@ -8,24 +8,19 @@ from datetime import datetime, timedelta
 
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
 
-# --- 上下文处理器 ---
+# --- 上下文 & 辅助 ---
 @core_bp.context_processor
 def inject_context():
     data = {'all_groups': []}
     if session.get('logged_in'):
         data['all_groups'] = BotGroup.query.order_by(BotGroup.updated_at.desc()).all()
     gid = session.get('current_group_id')
-    if gid:
-        data['current_group'] = BotGroup.query.get(gid)
+    if gid: data['current_group'] = BotGroup.query.get(gid)
     return data
 
-# --- 辅助函数 ---
 def safe_int(val, default=30):
-    try:
-        if val is None or str(val).strip() == "": return default
-        return int(val)
-    except:
-        return default
+    try: return int(val) if val and str(val).strip() else default
+    except: return default
 
 def get_group_conf(group):
     conf = DEFAULT_SYSTEM.copy()
@@ -89,27 +84,21 @@ def page_settings(gid):
     group = BotGroup.query.get_or_404(gid)
     conf = get_group_conf(group)
     fields = get_group_fields(group)
-    # ⚠️ 关键：查询所有频道类型
-    channels = BotGroup.query.filter_by(type='channel').all()
-    return render_template('settings.html', page='settings', group=group, conf=conf, fields=fields, channels=channels)
+    return render_template('settings.html', page='settings', group=group, conf=conf, fields=fields)
 
 # =======================
 # 📡 API 路由
 # =======================
-
 @core_bp.route('/api/save_settings', methods=['POST'])
 def api_save_settings():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
-    req_data = request.json
-    gid = req_data.get('group_id') or session.get('current_group_id')
+    req = request.json
+    gid = req.get('group_id') or session.get('current_group_id')
     group = BotGroup.query.get(gid)
     if group:
-        if 'config' in req_data: real_config = req_data['config']
-        else:
-            real_config = req_data.copy()
-            if 'group_id' in real_config: del real_config['group_id']
-        clean = {k: v for k, v in real_config.items() if v is not None}
-        group.config = json.dumps(clean, ensure_ascii=False)
+        real = req.get('config', req)
+        if 'group_id' in real: del real['group_id']
+        group.config = json.dumps({k:v for k,v in real.items() if v is not None}, ensure_ascii=False)
         db.session.commit()
     return jsonify({"status": "ok"})
 
@@ -119,25 +108,24 @@ def api_save_fields():
     gid = session.get('current_group_id')
     group = BotGroup.query.get(gid)
     if group:
-        data = request.json
-        if isinstance(data, dict) and 'fields' in data: data = data['fields']
-        group.fields_config = json.dumps(data, ensure_ascii=False)
+        d = request.json
+        group.fields_config = json.dumps(d.get('fields', d), ensure_ascii=False)
         db.session.commit()
     return jsonify({"status": "ok"})
 
 @core_bp.route('/api/save_user', methods=['POST'])
 def api_save_user():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
-    data = request.json
-    gid = data.get('group_id') or session.get('current_group_id')
+    d = request.json
+    gid = d.get('group_id') or session.get('current_group_id')
     try:
-        tg_id = int(data.get('tg_id'))
+        tg_id = int(d.get('tg_id'))
         user = GroupUser.query.filter_by(group_id=gid, tg_id=tg_id).first()
         if not user:
             user = GroupUser(group_id=gid, tg_id=tg_id)
             db.session.add(user)
-        user.profile_data = json.dumps(data.get('profile', {}), ensure_ascii=False)
-        days = int(data.get('add_days', 0))
+        user.profile_data = json.dumps(d.get('profile', {}), ensure_ascii=False)
+        days = int(d.get('add_days', 0))
         if days:
             now = datetime.now()
             base = user.expiration_date if (user.expiration_date and user.expiration_date > now) else now
@@ -158,23 +146,25 @@ def api_push_user():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     import app
     gid = session.get('current_group_id')
-    uid = request.json.get('id')
     group = BotGroup.query.get(gid)
-    user = GroupUser.query.get(uid)
+    user = GroupUser.query.get(request.json.get('id'))
     conf = get_group_conf(group)
-    channel_id = conf.get('push_channel_id')
-    if not channel_id: return jsonify({"status": "err", "msg": "未配置推送频道"})
-    tpl = conf.get('push_template', '{昵称} | {地区}')
-    fields_map = {f['key']: f['label'] for f in get_group_fields(group)}
+    
+    cid = conf.get('push_channel_id')
+    if not cid: return jsonify({"status": "err", "msg": "未配置推送频道ID"})
+    
+    tpl = conf.get('push_template', '')
+    f_map = {f['key']: f['label'] for f in get_group_fields(group)}
     try:
-        data = json.loads(user.profile_data)
+        d = json.loads(user.profile_data)
         line = tpl.replace("{onlineEmoji}", conf.get('online_emoji',''))
-        for k, l in fields_map.items(): line = line.replace(f"{{{l}}}", str(data.get(k,'')))
+        for k, l in f_map.items(): line = line.replace(f"{{{l}}}", str(d.get(k,'')))
         line = line.replace("{tg_id}", str(user.tg_id))
         line = re.sub(r'\{.*?\}', '', line)
+        
         if app.global_bot and app.global_loop:
             asyncio.run_coroutine_threadsafe(
-                app.global_bot.send_message(chat_id=channel_id, text=line, parse_mode='HTML'),
+                app.global_bot.send_message(chat_id=cid, text=line, parse_mode='HTML'),
                 app.global_loop
             )
             return jsonify({"status": "ok", "msg": "✅ 已推送"})
@@ -204,83 +194,65 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 🤖 机器人逻辑 (核心修复)
+# 🤖 机器人逻辑
 # =======================
 
 async def get_group_info_safe(chat):
-    """纯数据查询，防止 DetachedInstanceError"""
     if chat.type not in ['group', 'supergroup', 'channel']: return None
     from app import create_app
     with create_app().app_context():
         bg = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
         if not bg:
-            # 🆕 频道发现逻辑
             bg = BotGroup(chat_id=str(chat.id), is_active=True, type=chat.type, title=chat.title or "Channel")
             bg.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
             db.session.add(bg)
-            print(f"🆕 发现新{chat.type}: {chat.title} ({chat.id})")
-        
-        # 更新标题
         if bg.title != (chat.title or chat.username):
             bg.title = chat.title or chat.username
-            
         bg.updated_at = datetime.now()
         db.session.commit()
-        
-        return {
-            'id': bg.id, 
-            'is_active': bg.is_active, 
-            'config': bg.config, 
-            'fields_config': bg.fields_config
-        }
+        return {'id': bg.id, 'is_active': bg.is_active, 'config': bg.config, 'fields_config': bg.fields_config}
 
 async def bot_start(update: Update, context):
     if update.effective_chat.type == 'private' and update.effective_user.id == int(os.getenv('ADMIN_ID', 0)):
         token = jwt.encode({'uid': update.effective_user.id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY'), algorithm='HS256')
-        base = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')
-        url = f"{base}/core/magic_login?token={token}"
+        url = f"{os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')}/core/magic_login?token={token}"
         await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
 
 async def bot_handler(update: Update, context):
     msg = update.message or update.channel_post
     if not msg: return
     
-    # 1. 发现群组/频道
     g_info = await get_group_info_safe(update.effective_chat)
     if not g_info: return
 
-    # 构造配置对象
-    class MockGroup:
+    class Mock:
         def __init__(self, c, f): self.config=c; self.fields_config=f
-    mock_g = MockGroup(g_info['config'], g_info['fields_config'])
-    
+    mock_g = Mock(g_info['config'], g_info['fields_config'])
     conf = get_group_conf(mock_g)
-    fields = get_group_fields(mock_g)
     
+    if not update.effective_user: return # 频道消息不处理
+
     text = msg.text.strip() if msg.text else ""
-    user = update.effective_user
+    user_id = update.effective_user.id
     gid = g_info['id']
 
-    # 如果没有用户（如频道消息），则只做发现，不处理业务
-    if not user: return 
-
-    # 2. 自动点赞 (提前到指令之前，确保每次发言都检查)
+    # 1. 自动点赞 (强转类型对比)
     if conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
-            uid = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
+            # 必须用 int() 确保类型一致
+            uid = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=int(user_id)).scalar()
             if uid:
                 try: await msg.set_reaction(conf.get('like_emoji', '❤️'))
                 except: pass
 
-    # 3. 打卡指令
-    checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
-    # 简单的包含判断或者全等判断
-    if text in checkin_cmds:
+    # 2. 打卡
+    cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
+    if text in cmds:
         if not conf.get('checkin_open'): return
         from app import create_app
         with create_app().app_context():
-            u = GroupUser.query.filter_by(group_id=gid, tg_id=user.id).first()
+            u = GroupUser.query.filter_by(group_id=gid, tg_id=int(user_id)).first()
             delay = safe_int(conf.get('checkin_del_time'), 30)
             
             if not u:
@@ -296,32 +268,35 @@ async def bot_handler(update: Update, context):
             try: context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=msg)
             except: pass
             context.job_queue.run_once(lambda c: c.job.data.delete(), delay, data=reply)
-            return # 打卡处理完直接返回，不继续匹配查询
+            return
 
-    # 4. 查询指令 (允许任何人查询，不仅限认证用户)
+    # 3. 查询 (高级筛选)
     q_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
-    matched = next((c for c in q_cmds if text.startswith(c)), None)
+    matched_cmd = next((c for c in q_cmds if text.startswith(c)), None)
     
-    if matched:
+    if matched_cmd:
         if not conf.get('query_open'): return
-        kw = text[len(matched):].strip()
+        # 提取参数： "查询 福田" -> "福田"
+        filter_kw = text[len(matched_cmd):].strip()
         
         from app import create_app
         with create_app().app_context():
             today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
             base = GroupUser.query.filter(GroupUser.group_id == gid, GroupUser.checkin_time >= today, GroupUser.online == True)
-            if kw: base = base.filter(GroupUser.profile_data.contains(kw))
+            
+            # 如果有参数，就筛选 profile_data
+            if filter_kw: base = base.filter(GroupUser.profile_data.contains(filter_kw))
             
             users = base.order_by(GroupUser.checkin_time.desc()).all()
             delay = safe_int(conf.get('checkin_del_time'), 30)
             
             if not users:
-                txt = f"😢 暂无匹配 '{kw}' 的用户" if kw else "😢 本群今日暂无打卡"
+                txt = f"😢 暂无匹配 '{filter_kw}' 的用户" if filter_kw else "😢 本群今日暂无打卡"
                 reply = await msg.reply_text(txt)
             else:
                 header = conf.get('msg_query_header', '')
                 tpl = conf.get('template', '')
-                f_map = {f['key']: f['label'] for f in fields}
+                f_map = {f['key']: f['label'] for f in get_group_fields(mock_g)}
                 lines = []
                 for u in users:
                     try:
