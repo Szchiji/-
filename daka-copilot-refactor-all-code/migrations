@@ -1,0 +1,3 @@
+flask db init  # 创建 migrations 文件夹（只运行一次，如果已存在跳过）
+flask db migrate -m "Initial migration"  # 生成迁移脚本（检测模型变化）
+flask db upgrade  # 本地应用迁移，测试无错误
