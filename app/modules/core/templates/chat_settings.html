@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+    <a href="/core" class="btn btn-light me-3"><i class="fa-solid fa-arrow-left"></i> 返回</a>
+    <h4 class="m-0 fw-bold">{{ chat.title }} <span class="badge bg-primary fs-6 align-middle ms-2">配置管理</span></h4>
+</div>
+
+<div class="row">
+    <!-- 左侧：功能开关 -->
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white fw-bold">功能开关</div>
+            <div class="card-body">
+                <div class="form-check form-switch mb-3 p-3 bg-light rounded d-flex justify-content-between">
+                    <label class="form-check-label fw-bold">开启打卡功能</label>
+                    <input class="form-check-input" type="checkbox" id="checkin_open" {{ 'checked' if s.checkin_open }}>
+                </div>
+                <div class="mb-3"><label class="small text-muted">打卡指令</label><input id="checkin_cmd" class="form-control" value="{{ s.checkin_cmd }}"></div>
+                <div class="mb-3"><label class="small text-muted">查询指令</label><input id="query_cmd" class="form-control" value="{{ s.query_cmd }}"></div>
+                <div class="mb-3"><label class="small text-muted">指令删除时间 (秒)</label><input type="number" id="del_time" class="form-control" value="{{ s.del_time }}"></div>
+                <hr>
+                <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if s.auto_like }}><label>认证用户点赞</label></div>
+                <div class="input-group mb-3"><span class="input-group-text">点赞表情</span><input id="like_emoji" class="form-control" value="{{ s.like_emoji }}"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧：消息文案编辑器 -->
+    <div class="col-lg-8 mb-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span class="fw-bold">消息文案配置</span>
+                <select class="form-select form-select-sm w-auto" id="msgSelector" onchange="loadEditorContent()">
+                    <option value="user_template">👤 用户展示模板</option>
+                    <option value="msg_success">✅ 打卡成功消息</option>
+                    <option value="msg_repeat">🔄 重复打卡消息</option>
+                    <option value="msg_fail">⚠️ 未认证提示</option>
+                    <option value="msg_query_head">🔍 查询列表抬头</option>
+                </select>
+            </div>
+            <div class="card-body d-flex flex-column">
+                <!-- 仿截图的工具栏 -->
+                <div class="border rounded-top bg-light p-2 d-flex gap-2 flex-wrap align-items-center">
+                    <div class="btn-group bg-white border rounded">
+                        <button class="btn btn-sm btn-light text-dark" onclick="cmd('bold')" title="加粗"><i class="fa-solid fa-bold"></i></button>
+                        <button class="btn btn-sm btn-light text-dark" onclick="cmd('italic')" title="斜体"><i class="fa-solid fa-italic"></i></button>
+                        <button class="btn btn-sm btn-light text-dark" onclick="cmd('underline')" title="下划线"><i class="fa-solid fa-underline"></i></button>
+                        <button class="btn btn-sm btn-light text-dark" onclick="cmd('strikeThrough')" title="删除线"><i class="fa-solid fa-strikethrough"></i></button>
+                        <button class="btn btn-sm btn-light text-dark" onclick="promptLink()" title="链接"><i class="fa-solid fa-link"></i></button>
+                    </div>
+                    
+                    <div class="vr mx-1"></div>
+                    
+                    <!-- 变量标签 -->
+                    <div class="d-flex gap-2 flex-wrap">
+                        <span class="badge bg-white text-dark border cursor-pointer hover-shadow" onclick="insert('{onlineEmoji}')">🟢 在线表情</span>
+                        {% for f in fields %}
+                        <span class="badge bg-white text-primary border cursor-pointer hover-shadow" onclick="insert('{'+'{{ f.label }}'+'Value}')">{{ f.label }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- 编辑区域 -->
+                <div id="editor" class="form-control border-top-0 rounded-bottom flex-grow-1 p-3" contenteditable="true" style="min-height: 300px; outline: none; font-size: 15px; line-height: 1.6;"></div>
+                
+                <div class="mt-3 text-end">
+                    <button class="btn btn-success fw-bold px-4" onclick="saveCurrentMsg()">
+                        <i class="fa-solid fa-check me-1"></i> 暂存当前文案
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="fixed-bottom p-3 bg-white border-top shadow text-center" style="margin-left: 260px;">
+    <button class="btn btn-primary btn-lg px-5 fw-bold" onclick="saveAll()">
+        <i class="fa-solid fa-floppy-disk me-2"></i> 保存本群配置
+    </button>
+</div>
+
+<script>
+    // 存储当前所有文案的字典
+    let msgData = {
+        user_template: `{{ s.user_template|safe }}`,
+        msg_success: `{{ s.msg_success|safe }}`,
+        msg_repeat: `{{ s.msg_repeat|safe }}`,
+        msg_fail: `{{ s.msg_fail|safe }}`,
+        msg_query_head: `{{ s.msg_query_head|safe }}`
+    };
+
+    document.addEventListener('DOMContentLoaded', loadEditorContent);
+
+    function loadEditorContent() {
+        const key = document.getElementById('msgSelector').value;
+        document.getElementById('editor').innerHTML = msgData[key] || '';
+    }
+
+    function saveCurrentMsg() {
+        const key = document.getElementById('msgSelector').value;
+        msgData[key] = document.getElementById('editor').innerHTML;
+        // 添加一个小动画提示
+        const btn = document.querySelector('.btn-success');
+        const orgText = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> 已暂存';
+        setTimeout(()=> btn.innerHTML = orgText, 1000);
+    }
+
+    function cmd(c, v=null) { document.getElementById('editor').focus(); document.execCommand(c, false, v); }
+    function insert(t) { cmd('insertText', t); }
+    function promptLink() { let u = prompt('URL:'); if(u) cmd('createLink', u); }
+
+    function saveAll() {
+        // 先保存当前编辑器里的内容
+        saveCurrentMsg();
+        
+        const data = {
+            chat_id: {{ chat.id }},
+            settings: {
+                ...msgData,
+                checkin_open: document.getElementById('checkin_open').checked,
+                checkin_cmd: document.getElementById('checkin_cmd').value,
+                query_cmd: document.getElementById('query_cmd').value,
+                del_time: document.getElementById('del_time').value,
+                auto_like: document.getElementById('auto_like').checked,
+                like_emoji: document.getElementById('like_emoji').value,
+                online_emoji: "{{ s.online_emoji }}"
+            }
+        };
+
+        fetch('/core/api/save_chat_settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        }).then(() => alert('✅ 本群配置已保存！'));
+    }
+</script>
+<style>
+    .hover-shadow:hover { box-shadow: 0 2px 4px rgba(0,0,0,0.1); transform: translateY(-1px); transition: 0.2s; }
+</style>
+{% endblock %}
