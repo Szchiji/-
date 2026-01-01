@@ -12,7 +12,7 @@
     </div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-            <thead class="bg-light"><tr><th class="ps-4">ID</th><th>资料</th><th>状态</th><th class="text-end pe-4">操作</th></tr></thead>
+            <thead class="bg-light"><tr><th class="ps-4">ID</th><th>资料预览</th><th>状态</th><th class="text-end pe-4">操作</th></tr></thead>
             <tbody>
                 {% for u in users %}
                 <tr id="row_{{ u.id }}">
@@ -76,7 +76,7 @@
             else d.profile[f.key]=fd.get(f.key);
         });
         fetch('/core/api/save_user', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)})
-        .then(r=>r.json()).then(res=>{ if(res.status==='ok'){myModal.hide();alert('✅ 保存成功');}else alert('失败'); });
+        .then(r=>r.json()).then(res=>{ if(res.status==='ok'){myModal.hide();alert('✅ 保存成功'); location.reload();}else alert('失败'); });
     }
     function delUser(id){ if(confirm('删?')) fetch('/core/api/delete_user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(()=>{document.getElementById('row_'+id).remove();alert('已删除');}); }
     function pushUser(id){ if(confirm('推?')) fetch('/core/api/push_user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(r=>r.json()).then(d=>alert(d.msg)); }
