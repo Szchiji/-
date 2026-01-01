@@ -2,21 +2,37 @@ import os
 import logging
 import asyncio
 import threading
+import time
+import hmac
+import hashlib
 from datetime import datetime, timedelta
 from flask import Flask, render_template_string, request, redirect, url_for, session
 from flask_sqlalchemy import SQLAlchemy
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # --- 配置部分 ---
-# Railway 的 DATABASE_URL 默认为 postgres://，需要修正为 postgresql:// 才能被 SQLAlchemy 识别
 DB_URI = os.getenv('DATABASE_URL', 'sqlite:///bot.db')
 if DB_URI and DB_URI.startswith("postgres://"):
     DB_URI = DB_URI.replace("postgres://", "postgresql://", 1)
 
 TOKEN = os.getenv('TOKEN')
+# 必须配置 ADMIN_ID，否则机器人不知道谁是管理员
+ADMIN_ID = int(os.getenv('ADMIN_ID', '0')) 
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '123456')
 PORT = int(os.getenv('PORT', 5000))
+# 用于生成登录 Token 的密钥，Railway 会自动生成随机的 SECRET_KEY，如果没有就用默认的
+SECRET_KEY = os.getenv('SECRET_KEY', 'my-super-secret-key-for-token')
+
+# 获取当前 Web 的域名 (Railway 提供的域名)
+# 如果你没有设置 RAILWAY_PUBLIC_DOMAIN 变量，需要手动填你的域名，否则按钮跳转会跳到 localhost
+WEB_DOMAIN = os.getenv('RAILWAY_PUBLIC_DOMAIN', '') 
+if not WEB_DOMAIN and os.getenv('RAILWAY_STATIC_URL'):
+    WEB_DOMAIN = os.getenv('RAILWAY_STATIC_URL')
+
+# 确保域名带 https
+if WEB_DOMAIN and not WEB_DOMAIN.startswith('http'):
+    WEB_DOMAIN = f"https://{WEB_DOMAIN}"
 
 # --- 初始化 ---
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -25,7 +41,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = os.urandom(24)
+app.config['SECRET_KEY'] = SECRET_KEY
 db = SQLAlchemy(app)
 
 # --- 数据库模型 ---
@@ -43,6 +59,31 @@ class User(db.Model):
         if not self.expiration_date: return True
         return datetime.now() > self.expiration_date
 
+# --- 工具函数：生成和验证 Token ---
+def generate_login_token(admin_id):
+    timestamp = int(time.time())
+    data = f"{admin_id}:{timestamp}"
+    signature = hmac.new(SECRET_KEY.encode(), data.encode(), hashlib.sha256).hexdigest()
+    return f"{data}:{signature}"
+
+def verify_login_token(token):
+    try:
+        data_part, signature = token.rsplit(':', 1)
+        admin_id, timestamp = data_part.split(':')
+        
+        # 验证签名
+        expected_signature = hmac.new(SECRET_KEY.encode(), data_part.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected_signature):
+            return False
+            
+        # 验证是否过期 (比如 5 分钟内有效)
+        if int(time.time()) - int(timestamp) > 300: 
+            return False
+            
+        return True
+    except Exception:
+        return False
+
 # --- 网页 HTML ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -54,42 +95,61 @@ HTML_TEMPLATE = """
 </head>
 <body class="p-3">
     {% if not session.get('logged_in') %}
-    <form method="post" action="/login" class="mt-5">
-        <h3>管理员登录</h3>
-        <input type="password" name="password" class="form-control mb-2" placeholder="密码">
-        <button class="btn btn-primary">登录</button>
-    </form>
-    {% else %}
-    <div class="d-flex justify-content-between mb-3">
-        <h3>会员管理</h3><a href="/logout" class="btn btn-sm btn-danger">退出</a>
+    <div class="container mt-5">
+        <div class="alert alert-warning">请通过 Telegram 机器人发送 /start 获取登录链接，或使用密码登录。</div>
+        <form method="post" action="/login">
+            <input type="password" name="password" class="form-control mb-2" placeholder="密码">
+            <button class="btn btn-primary">登录</button>
+        </form>
     </div>
-    <form method="post" action="/update_user" class="card p-3 mb-3">
-        <h6>添加/续费</h6>
-        <input type="number" name="tg_id" class="form-control mb-2" placeholder="Telegram ID" required>
-        <input type="number" name="days" class="form-control mb-2" value="30" placeholder="天数">
-        <select name="level" class="form-control mb-2">
-            <option value="E">E级 (普通)</option>
-            <option value="A">A级</option>
-            <option value="B">B级</option>
-        </select>
-        <button class="btn btn-success w-100">提交</button>
-    </form>
-    <table class="table table-sm">
-        <thead><tr><th>ID</th><th>等级</th><th>积分</th><th>过期</th></tr></thead>
-        <tbody>
-        {% for u in users %}
-        <tr>
-            <td>{{ u.tg_id }}</td>
-            <td>{{ u.membership_level }}</td>
-            <td>{{ u.points }}</td>
-            <td>
-                {% if u.is_expired %}<span class="badge bg-danger">过期</span>
-                {% else %}<span class="badge bg-success">{{ u.expiration_date.strftime('%m-%d') }}</span>{% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    {% else %}
+    <div class="d-flex justify-content-between mb-3 align-items-center">
+        <h3 class="m-0">会员管理</h3>
+        <a href="/logout" class="btn btn-sm btn-outline-danger">退出</a>
+    </div>
+    
+    <div class="card p-3 mb-4 shadow-sm">
+        <h6 class="card-title">添加/续费会员</h6>
+        <form method="post" action="/update_user">
+            <div class="row g-2">
+                <div class="col-12">
+                    <input type="number" name="tg_id" class="form-control" placeholder="Telegram ID" required>
+                </div>
+                <div class="col-6">
+                    <input type="number" name="days" class="form-control" value="30" placeholder="天数">
+                </div>
+                <div class="col-6">
+                    <select name="level" class="form-select">
+                        <option value="E">E级 (普通)</option>
+                        <option value="A">A级</option>
+                        <option value="B">B级</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-success w-100">提交更新</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead><tr><th>ID</th><th>等级</th><th>积分</th><th>过期</th></tr></thead>
+            <tbody>
+            {% for u in users %}
+            <tr>
+                <td>{{ u.tg_id }}<br><small class="text-muted">{{ u.username or '无名' }}</small></td>
+                <td><span class="badge bg-secondary">{{ u.membership_level }}</span></td>
+                <td>{{ u.points }}</td>
+                <td>
+                    {% if u.is_expired %}<span class="badge bg-danger">过期</span>
+                    {% else %}<span class="badge bg-success">{{ u.expiration_date.strftime('%m-%d') }}</span>{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
     {% endif %}
 </body>
 </html>
@@ -106,6 +166,15 @@ def index():
 def login():
     if request.form.get('password') == ADMIN_PASSWORD: session['logged_in'] = True
     return redirect('/')
+
+# --- 新增：魔法登录路由 ---
+@app.route('/magic_login')
+def magic_login():
+    token = request.args.get('token')
+    if token and verify_login_token(token):
+        session['logged_in'] = True
+        return redirect('/')
+    return "登录链接无效或已过期", 403
 
 @app.route('/logout')
 def logout():
@@ -137,11 +206,32 @@ def update_user():
 # --- Bot 逻辑 ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     u = update.effective_user
+    tg_id = u.id
+
+    # 自动入库逻辑
     with app.app_context():
-        if not User.query.filter_by(tg_id=u.id).first():
-            db.session.add(User(tg_id=u.id, username=u.username))
+        if not User.query.filter_by(tg_id=tg_id).first():
+            db.session.add(User(tg_id=tg_id, username=u.username))
             db.session.commit()
-    await update.message.reply_text(f"👋 欢迎 {u.first_name}\n/daka - 打卡\n/me - 我的状态")
+    
+    # --- 管理员特殊回复 ---
+    if tg_id == ADMIN_ID:
+        if not WEB_DOMAIN:
+            await update.message.reply_text("⚠️ 请先在 Railway 变量中设置 RAILWAY_PUBLIC_DOMAIN，否则无法生成跳转链接。")
+            return
+
+        # 生成免密登录 Token
+        token = generate_login_token(tg_id)
+        login_url = f"{WEB_DOMAIN}/magic_login?token={token}"
+        
+        keyboard = [[InlineKeyboardButton("🚀 进入管理后台 (免密)", url=login_url)]]
+        await update.message.reply_text(
+            f"👋 管理员 {u.first_name}，你好！\n\n点击下方按钮可直接登录后台管理用户。",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        # 普通用户回复
+        await update.message.reply_text(f"👋 欢迎 {u.first_name}\n/daka - 打卡\n/me - 我的状态")
 
 async def daka(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tg_id = update.effective_user.id
@@ -168,24 +258,18 @@ async def my_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- 核心启动逻辑 ---
 def run_flask():
-    # 在独立线程启动 Flask，use_reloader=False 防止重复启动
     app.run(host='0.0.0.0', port=PORT, use_reloader=False)
 
 async def main():
-    # 1. 确保数据库表存在
     with app.app_context():
         db.create_all()
 
-    # 2. 启动 Flask 线程 (后台)
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     logger.info(f"🌐 Flask Web running on port {PORT}")
 
-    # 3. 启动 Bot (主线程)
-    if not TOKEN:
-        logger.error("❌ 未设置 BOT_TOKEN")
-        return
+    if not TOKEN: return
 
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
@@ -194,12 +278,10 @@ async def main():
 
     logger.info("🤖 Bot starting...")
     
-    # 手动控制循环，解决信号冲突
     await application.initialize()
     await application.start()
     await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
 
-    # 保持运行
     stop_event = asyncio.Event()
     await stop_event.wait()
 
