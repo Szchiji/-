@@ -1,19 +1,33 @@
 {% extends "base.html" %}
+
 {% block body %}
+<!-- 侧边栏放在这里 -->
 <nav class="sidebar">
     <div class="sidebar-brand"><i class="fa-solid fa-robot me-2"></i> Bot Admin</div>
     <div class="nav flex-column py-3 px-2">
         <div class="px-3 mb-2 text-xs fw-bold text-muted text-uppercase" style="font-size: 0.75rem;">当前群组</div>
         <div class="px-3 mb-3 fw-bold text-truncate" title="{{ current_group.title }}">{{ current_group.title }}</div>
-        <a href="/core/group/{{ current_group.id }}/dashboard" class="nav-link {% if page=='dashboard' %}active{% endif %}"><i class="fa-solid fa-chart-pie"></i> 仪表盘</a>
-        <a href="/core/group/{{ current_group.id }}/users" class="nav-link {% if page=='users' %}active{% endif %}"><i class="fa-solid fa-users"></i> 用户管理</a>
-        <a href="/core/group/{{ current_group.id }}/fields" class="nav-link {% if page=='fields' %}active{% endif %}"><i class="fa-solid fa-list-check"></i> 资料字段</a>
-        <a href="/core/group/{{ current_group.id }}/settings" class="nav-link {% if page=='settings' %}active{% endif %}"><i class="fa-solid fa-sliders"></i> 功能配置</a>
+        
+        <a href="/core/group/{{ current_group.id }}/dashboard" class="nav-link {% if page=='dashboard' %}active{% endif %}">
+            <i class="fa-solid fa-chart-pie"></i> 仪表盘
+        </a>
+        <a href="/core/group/{{ current_group.id }}/users" class="nav-link {% if page=='users' %}active{% endif %}">
+            <i class="fa-solid fa-users"></i> 用户管理
+        </a>
+        <a href="/core/group/{{ current_group.id }}/fields" class="nav-link {% if page=='fields' %}active{% endif %}">
+            <i class="fa-solid fa-list-check"></i> 资料字段
+        </a>
+        <a href="/core/group/{{ current_group.id }}/settings" class="nav-link {% if page=='settings' %}active{% endif %}">
+            <i class="fa-solid fa-sliders"></i> 功能配置
+        </a>
+        
         <hr class="mx-3 my-3 text-muted opacity-25">
         <a href="/core/select_group" class="nav-link text-dark"><i class="fa-solid fa-exchange-alt"></i> 切换群组</a>
         <a href="/core/logout" class="nav-link text-danger"><i class="fa-solid fa-right-from-bracket"></i> 退出登录</a>
     </div>
 </nav>
+
+<!-- 右侧内容 -->
 <div class="main-wrapper">
     <header class="topbar">
         <h5 class="mb-0 fw-bold text-dark me-auto">
@@ -22,8 +36,12 @@
             {% if page=='fields' %}字段配置{% endif %}
             {% if page=='settings' %}功能设置{% endif %}
         </h5>
-        <a href="https://t.me/{{ current_group.username }}" target="_blank" class="btn btn-sm btn-light text-primary"><i class="fa-brands fa-telegram"></i> 打开群组</a>
+        <a href="https://t.me/{{ current_group.username }}" target="_blank" class="btn btn-sm btn-light text-primary">
+            <i class="fa-brands fa-telegram"></i> 打开群组
+        </a>
     </header>
-    <div class="content">{% block content %}{% endblock %}</div>
+    <div class="content">
+        {% block content %}{% endblock %}
+    </div>
 </div>
 {% endblock %}
