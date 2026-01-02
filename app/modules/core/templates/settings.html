@@ -14,9 +14,9 @@
         font-size: 14px; 
         line-height: 1.6;
         white-space: pre-wrap;
+        outline: none;
     }
     #editor:focus { background-color: #fcfcfc; }
-    /* 模拟 Telegram 消息气泡效果 */
     .msg-bubble { background-color: #fff; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; }
 </style>
 
@@ -153,7 +153,9 @@
                             </optgroup>
                         </select>
                     </div>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="saveTmp()">暂存修改</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="saveTmp()">
+                        <i class="fa-solid fa-bookmark me-1"></i>暂存修改
+                    </button>
                 </div>
                 
                 <div class="card-body p-0 d-flex flex-column msg-bubble mx-3 my-3">
@@ -184,7 +186,7 @@
                     <div id="editor" contenteditable="true" class="p-3 flex-grow-1"></div>
                 </div>
                 <div class="card-footer bg-white text-muted small border-top-0">
-                    <i class="fa-solid fa-circle-info me-1"></i> 支持 HTML 标签，如 &lt;b&gt;粗体&lt;/b&gt;, &lt;a href="..."&gt;链接&lt;/a&gt;。切换下拉菜单前请点击"暂存修改"。
+                    <i class="fa-solid fa-circle-info me-1"></i> 支持 HTML 标签。切换下拉菜单前请点击"暂存修改"。
                 </div>
             </div>
 
@@ -265,23 +267,12 @@
     }
     
     function saveTmp() { 
-        // 暂存当前编辑器的内容到 msgs 对象
         let content = document.getElementById('editor').innerHTML;
-        // 清理一下不必要的 nbsp
         content = content.replace(/&nbsp;/g, ' '); 
         msgs[document.getElementById('msgSelector').value] = content;
         
-        // 视觉反馈
-        const btn = document.querySelector('button[onclick="saveTmp()"]');
-        const oldText = btn.innerHTML;
-        btn.innerHTML = '<i class="fa-solid fa-check"></i> 已暂存';
-        btn.classList.add('btn-success');
-        btn.classList.remove('btn-outline-secondary');
-        setTimeout(() => {
-            btn.innerHTML = oldText;
-            btn.classList.remove('btn-success');
-            btn.classList.add('btn-outline-secondary');
-        }, 800);
+        // 调用 base.html 的气泡
+        showToast('文案已暂存', 'success');
     }
     
     function cmd(c,v){ document.getElementById('editor').focus(); document.execCommand(c,false,v); }
@@ -294,42 +285,32 @@
     function link(){ let u=prompt('输入链接地址 (URL):'); if(u) cmd('createLink',u); }
     
     // --- 保存总配置 ---
-    function saveSettings() {
-        saveTmp(); // 提交前先暂存当前编辑框
+    async function saveSettings() {
+        saveTmp(); // 自动暂存当前编辑框
         
-        // 收集所有数据
         const d = {
             group_id: currentGroupId,
             config: {
-                ...msgs, // 展开所有文案
-                
+                ...msgs,
                 checkin_open: document.getElementById('checkin_open').checked,
                 checkin_cmd: document.getElementById('checkin_cmd').value,
                 checkin_del_time: document.getElementById('checkin_del_time').value, 
-                
                 query_open: document.getElementById('query_open').checked,
                 query_cmd: document.getElementById('query_cmd').value,
                 query_filter_open: document.getElementById('query_filter_open').checked,
                 query_del_time: document.getElementById('query_del_time').value,
-                
                 page_size: document.getElementById('page_size').value,
-                
                 auto_like: document.getElementById('auto_like').checked,
                 like_emoji: document.getElementById('like_emoji').value,
                 auto_mute_expired: document.getElementById('auto_mute_expired').checked,
-
                 push_channel_id: document.getElementById('push_channel_id').value,
-                // 过滤掉空按钮
                 custom_buttons: JSON.stringify(btnData.filter(b => b.text && b.url)), 
-                
-                // 保持原有的表情设置
                 online_emoji: "{{ conf.online_emoji }}", 
                 offline_emoji: "{{ conf.offline_emoji }}"
             }
         };
         
-        // 发送请求 (使用 base.html 中定义的 postApi)
-        postApi('/core/api/save_settings', d);
+        await postApi('/core/api/save_settings', d);
     }
 </script>
 {% endblock %}
