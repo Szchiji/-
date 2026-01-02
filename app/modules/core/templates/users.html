@@ -1,6 +1,18 @@
 {% extends "layout_admin.html" %}
 
 {% block content %}
+<!-- 气泡提示容器 -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1055;">
+    <div id="liveToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body fw-bold">
+                <i class="fa-solid fa-check-circle me-2"></i> <span id="toastMsg">操作成功</span>
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
 <div class="card shadow mb-4">
     <div class="card-header py-3 d-flex justify-content-between align-items-center bg-white">
         <h6 class="m-0 font-weight-bold text-primary"><i class="fa-solid fa-table me-1"></i> 用户列表</h6>
@@ -17,7 +29,7 @@
                         {% for f in fields %}<th>{{ f.label }}</th>{% endfor %}
                         <th>状态</th>
                         <th>过期时间</th>
-                        <th class="text-end pe-4">管理</th>
+                        <th class="text-end pe-4" style="min-width: 140px;">管理操作</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -47,10 +59,16 @@
                             {% endif %}
                         </td>
                         <td class="text-end pe-4">
-                            <button class="btn btn-sm btn-light text-primary" onclick='openEdit({{ u.id }}, {{ u.tg_id }}, {{ u.profile_data|safe }})' title="编辑">
+                            <!-- ⚡️ 推送按钮 -->
+                            <button class="btn btn-sm btn-light text-success me-1" onclick="pushUser({{ u.id }})" title="推送到频道">
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                            <!-- 编辑按钮 -->
+                            <button class="btn btn-sm btn-light text-primary me-1" onclick='openEdit({{ u.id }}, {{ u.tg_id }}, {{ u.profile_data|safe }})' title="编辑资料">
                                 <i class="fa-solid fa-pen"></i>
                             </button>
-                            <button class="btn btn-sm btn-light text-danger ms-1" onclick="delUser({{ u.id }})" title="删除">
+                            <!-- 删除按钮 -->
+                            <button class="btn btn-sm btn-light text-danger" onclick="delUser({{ u.id }})" title="删除用户">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
                         </td>
@@ -69,7 +87,7 @@
     </div>
 </div>
 
-<!-- 编辑/添加弹窗 -->
+<!-- 模态框 -->
 <div class="modal fade" id="editModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content border-0 shadow-lg">
@@ -89,10 +107,12 @@
                     <label class="form-label text-muted small fw-bold">{{ f.label }}</label>
                     {% if f.type == 'select' %}
                     <select class="form-select form-select-lg dynamic-field" data-key="{{ f.key }}">
-                        {# 智能判断：如果是列表直接用，如果是字符串则分割 #}
-                        {% set opts = f.options if f.options is iterable and f.options is not string else f.options.split(',') %}
+                        {# 容错处理 #}
+                        {% set opts = f.options if f.options is iterable and f.options is not string else (f.options or '').split(',') %}
                         {% for opt in opts %}
-                        <option value="{{ opt }}">{{ opt }}</option>
+                            {% if opt %}
+                            <option value="{{ opt }}">{{ opt }}</option>
+                            {% endif %}
                         {% endfor %}
                     </select>
                     {% else %}
@@ -118,6 +138,47 @@
 </div>
 
 <script>
+    // 显示气泡提示
+    function showToast(msg, isError=false) {
+        const t = document.getElementById('liveToast');
+        const b = document.getElementById('toastMsg');
+        
+        // 设置颜色
+        if (isError) {
+            t.classList.remove('bg-success');
+            t.classList.add('bg-danger');
+        } else {
+            t.classList.remove('bg-danger');
+            t.classList.add('bg-success');
+        }
+        
+        b.innerText = msg;
+        const toast = new bootstrap.Toast(t);
+        toast.show();
+    }
+
+    // 重写通用的 postApi，改用气泡提示
+    async function postApiToast(url, data) {
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            const json = await res.json();
+            
+            if (json.status === 'ok') {
+                showToast(json.msg || '操作成功');
+                // 1秒后刷新页面
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('失败: ' + (json.msg || '未知错误'), true);
+            }
+        } catch (e) {
+            showToast('网络请求失败', true);
+        }
+    }
+
     function openAdd() {
         $('#edit_id').val(''); 
         $('#edit_tg_id').val('').prop('disabled', false);
@@ -126,10 +187,7 @@
         new bootstrap.Modal('#editModal').show();
     }
     
-    function openEdit(id, tgId, profileStr) {
-        // ⚡️ 这里删除了会导致报错的注释代码
-        let profile = profileStr; 
-        
+    function openEdit(id, tgId, profile) {
         $('#edit_id').val(id); 
         $('#edit_tg_id').val(tgId).prop('disabled', true);
         
@@ -145,14 +203,21 @@
     async function saveUser() {
         let profile = {};
         $('.dynamic-field').each(function() { profile[$(this).data('key')] = $(this).val(); });
-        await postApi('/core/api/save_user', {
+        await postApiToast('/core/api/save_user', {
             group_id: {{ group.id }}, tg_id: $('#edit_tg_id').val(),
             profile: profile, add_days: $('#edit_add_days').val()
         });
     }
     
     async function delUser(id) { 
-        if(confirm('确认删除?')) await postApi('/core/api/delete_user', {id: id}); 
+        if(confirm('确认删除?')) await postApiToast('/core/api/delete_user', {id: id}); 
+    }
+    
+    // ⚡️ 新增：推送功能
+    async function pushUser(id) {
+        if(confirm('确定要推送到频道吗？请确保【功能配置】中已填写频道ID，并将机器人拉入频道设为管理员。')) {
+            await postApiToast('/core/api/push_user', {id: id});
+        }
     }
 </script>
 {% endblock %}
