@@ -25,7 +25,7 @@
                     <tr>
                         <td class="ps-4 fw-bold text-dark">{{ u.tg_id }}</td>
                         
-                        {# ⚡️ 使用后端预处理好的 profile_dict #}
+                        {# 使用后端预处理好的 profile_dict #}
                         {% set profile = u.profile_dict %}
                         
                         {% for f in fields %}
@@ -89,7 +89,7 @@
                     <label class="form-label text-muted small fw-bold">{{ f.label }}</label>
                     {% if f.type == 'select' %}
                     <select class="form-select form-select-lg dynamic-field" data-key="{{ f.key }}">
-                        {# ⚡️ 智能判断：如果是列表直接用，如果是字符串则分割 #}
+                        {# 智能判断：如果是列表直接用，如果是字符串则分割 #}
                         {% set opts = f.options if f.options is iterable and f.options is not string else f.options.split(',') %}
                         {% for opt in opts %}
                         <option value="{{ opt }}">{{ opt }}</option>
@@ -119,15 +119,15 @@
 
 <script>
     function openAdd() {
-        $('#edit_id').val(''); $('#edit_tg_id').val('').prop('disabled', false);
-        $('.dynamic-field').val(''); $('#edit_add_days').val('');
+        $('#edit_id').val(''); 
+        $('#edit_tg_id').val('').prop('disabled', false);
+        $('.dynamic-field').val(''); 
+        $('#edit_add_days').val('');
         new bootstrap.Modal('#editModal').show();
     }
     
     function openEdit(id, tgId, profileStr) {
-        // profileStr 传过来是对象(因为用了safe且没有引号包裹)还是字符串?
-        // 在模板中 {{ u.profile_data|safe }} 输出的是 JSON 字符串 { "key": "val" }
-        // 这里的 profileStr 实际上直接就是 JS 对象了
+        // ⚡️ 这里删除了会导致报错的注释代码
         let profile = profileStr; 
         
         $('#edit_id').val(id); 
