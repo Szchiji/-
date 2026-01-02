@@ -1,61 +1,40 @@
 {% extends "base.html" %}
 
-{% block content %}
-<div class="container" style="max-width: 800px;">
-    <div class="text-center mb-5 pt-4">
-        <div class="d-inline-flex align-items-center justify-content-center bg-white rounded-circle shadow-sm mb-3" style="width: 80px; height: 80px;">
-            <i class="fa-solid fa-robot fa-2x text-primary"></i>
+{% block full_content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="text-center my-5">
+            <h2 class="fw-bold text-dark">选择管理群组</h2>
+            <p class="text-muted">请选择您要配置的 Telegram 群组</p>
         </div>
-        <h3 class="fw-bold">选择管理的群组</h3>
-        <p class="text-muted">请选择一个群组以进入管理面板</p>
-    </div>
 
-    {% if groups %}
-    <div class="row g-3">
-        {% for g in groups %}
-        <div class="col-12">
-            <a href="/core/group/{{ g.id }}/dashboard" class="card text-decoration-none transition-hover">
-                <div class="card-body p-4 d-flex align-items-center">
-                    <div class="bg-light rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 50px; height: 50px; flex-shrink: 0;">
-                        <i class="fa-solid fa-users text-primary fs-5"></i>
+        {% if groups %}
+        <div class="list-group shadow-lg rounded-3 border-0">
+            {% for g in groups %}
+            <a href="/core/group/{{ g.id }}/dashboard" class="list-group-item list-group-item-action p-4 d-flex align-items-center justify-content-between border-bottom">
+                <div class="d-flex align-items-center">
+                    <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 50px; height: 50px;">
+                        <i class="fa-solid fa-users fa-lg"></i>
                     </div>
-                    <div class="flex-grow-1 min-width-0">
-                        <h5 class="mb-1 fw-bold text-dark text-truncate">{{ g.title }}</h5>
-                        <div class="small text-muted">ID: {{ g.chat_id }}</div>
-                    </div>
-                    <div class="ps-3 text-end">
-                        {% if g.is_active %}
-                            <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3">活跃</span>
-                        {% else %}
-                            <span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill px-3">停用</span>
-                        {% endif %}
-                        <i class="fa-solid fa-chevron-right ms-2 text-muted"></i>
+                    <div>
+                        <h5 class="mb-0 fw-bold text-dark">{{ g.title }}</h5>
+                        <small class="text-muted">ID: {{ g.chat_id }}</small>
                     </div>
                 </div>
+                <i class="fa-solid fa-chevron-right text-muted"></i>
             </a>
+            {% endfor %}
         </div>
-        {% endfor %}
-    </div>
-    {% else %}
-    <div class="card text-center p-5">
-        <div class="card-body">
-            <i class="fa-solid fa-ghost fa-3x text-muted mb-3 opacity-25"></i>
-            <h5>暂无群组</h5>
-            <p class="text-muted">将机器人拉入群组并设为管理员，然后刷新页面。</p>
-            <a href="/core/select_group" class="btn btn-primary mt-3 px-4">刷新列表</a>
+        {% else %}
+        <div class="card shadow-lg border-0 text-center p-5">
+            <div class="mb-3">
+                <i class="fa-solid fa-ghost fa-3x text-muted opacity-50"></i>
+            </div>
+            <h5 class="fw-bold">暂无群组</h5>
+            <p class="text-muted mb-4">请先将机器人拉入群组并设为管理员，然后刷新页面。</p>
+            <a href="/core/select_group" class="btn btn-primary w-50 mx-auto rounded-pill">刷新列表</a>
         </div>
-    </div>
-    {% endif %}
-    
-    <div class="text-center mt-5">
-        <a href="https://t.me/BotFather" target="_blank" class="text-muted text-decoration-none small">
-            <i class="fa-regular fa-circle-question me-1"></i>如何添加群组？
-        </a>
+        {% endif %}
     </div>
 </div>
-
-<style>
-    .transition-hover { transition: transform 0.2s, box-shadow 0.2s; }
-    .transition-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
-</style>
 {% endblock %}
