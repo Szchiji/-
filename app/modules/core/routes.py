@@ -1,8 +1,8 @@
 from flask import Blueprint, render_template, request, redirect, session, jsonify
 from app import db
 from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM
-# ⚡️ 新增 ReactionTypeEmoji
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions, ChatMember, ReactionTypeEmoji
+# ⚡️ 移除了 ReactionTypeEmoji，防止报错
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions, ChatMember
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ChatMemberHandler, filters
 import os, jwt, time, json, asyncio, re, requests, math
 from datetime import datetime, timedelta
@@ -60,7 +60,7 @@ def get_group_fields(group):
         except: pass
     return DEFAULT_FIELDS
 
-# --- Web Routes (保持不变) ---
+# --- Web Routes ---
 @core_bp.route('/')
 def index(): return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
 
@@ -214,14 +214,14 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 🤖 机器人逻辑 (初始化函数)
+# 🤖 机器人逻辑
 # =======================
 
 async def run_bot():
-    """初始化机器人"""
     global global_ptb_app, global_bot_loop
-    token = os.getenv('TOKEN')
+    global_bot_loop = asyncio.get_running_loop()
     
+    token = os.getenv('TOKEN')
     app_bot = Application.builder().token(token).build()
     
     app_bot.add_handler(CommandHandler("start", bot_start))
@@ -233,7 +233,6 @@ async def run_bot():
     await app_bot.start()
     
     global_ptb_app = app_bot
-    global_bot_loop = asyncio.get_running_loop()
     
     domain = os.getenv('RAILWAY_PUBLIC_DOMAIN')
     if domain:
@@ -391,33 +390,27 @@ async def bot_handler(update: Update, context):
     user = update.effective_user
     text = msg.text.strip() if msg.text else ""
 
-    # 1. 自动点赞逻辑 (包含调试日志)
     if conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
-            # 检查用户是否存在
             exists = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
             
             if exists:
                 emoji = conf.get('like_emoji', '❤️')
-                print(f"👍 [Like] 准备给用户 {user.id} 点赞: {emoji}", flush=True)
+                print(f"👍 [Like] 给用户 {user.id} 点赞: {emoji}", flush=True)
                 try:
-                    # ⚡️ 使用原生异步 API，并捕获错误
+                    # ⚡️ 兼容旧版本的写法：直接传字典
                     await context.bot.set_message_reaction(
                         chat_id=msg.chat.id, 
                         message_id=msg.message_id, 
-                        reaction=[ReactionTypeEmoji(emoji)]
+                        reaction=[{'type': 'emoji', 'emoji': emoji}]
                     )
                 except Exception as e:
-                    print(f"❌ [Like] 点赞失败: {e}", flush=True)
+                    print(f"❌ [Like] 异步点赞失败: {e}，尝试 fallback", flush=True)
+                    # 只有当异步失败时，且是因为不支持该方法时，才考虑其他（这里通常不需要了）
                 
-                # 检查过期
                 if conf.get('auto_mute_expired'): 
                     await check_expiration_and_mute(context, gid, user.id, msg.chat.id, conf)
-            else:
-                # 开启了点赞但用户不在库中（可选：打印调试信息）
-                # print(f"ℹ️ [Like] 用户 {user.id} 未录入，跳过点赞", flush=True)
-                pass
 
     checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
     if text in checkin_cmds:
@@ -460,3 +453,22 @@ async def bot_handler(update: Update, context):
         if text_resp:
             sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
             context.job_queue.run_once(lambda c: c.job.data.delete(), safe_int(conf.get('query_del_time'), 60), data=sent)
+
+async def pagination_callback(update: Update, context):
+    query = update.callback_query
+    if query.data == "noop": return await query.answer()
+    parts = query.data.split('|')
+    page = int(parts[1])
+    kw = parts[2] if parts[2] != "None" else None
+    g_info = await get_group_info_safe(update.effective_chat)
+    if not g_info: return await query.answer("过期")
+    class Mock:
+        def __init__(self, c, f): self.config=c; self.fields_config=f
+    mock_g = Mock(g_info['config'], g_info['fields_config'])
+    conf = get_group_conf(mock_g)
+    fields = get_group_fields(mock_g)
+    text, markup, _ = await do_query_page(update.effective_chat.id, g_info['id'], conf, fields, kw, page)
+    try: 
+        await query.edit_message_text(text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
+        await query.answer()
+    except: await query.answer()
