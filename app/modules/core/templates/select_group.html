@@ -15,9 +15,10 @@
             </div>
 
             {% if groups %}
-            <div class="list-group shadow-sm rounded-4 overflow-hidden border-0">
+            <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                <div class="list-group list-group-flush">
                 {% for g in groups %}
-                <a href="/core/group/{{ g.id }}/dashboard" class="list-group-item list-group-item-action p-4 d-flex align-items-center justify-content-between border-bottom-0 border-top" style="border-color: rgba(0,0,0,0.05) !important;">
+                <a href="/core/group/{{ g.id }}/dashboard" class="list-group-item list-group-item-action p-4 d-flex align-items-center justify-content-between border-bottom">
                     <div class="d-flex align-items-center gap-3">
                         <div class="rounded-circle bg-light d-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
                             <i class="fa-solid fa-users text-primary"></i>
@@ -38,14 +39,15 @@
                     </div>
                 </a>
                 {% endfor %}
+                </div>
             </div>
             {% else %}
-            <div class="card text-center p-5 border-0 shadow-sm">
+            <div class="card text-center p-5 border-0 shadow-sm rounded-4">
                 <div class="card-body">
                     <i class="fa-solid fa-inbox fa-3x text-muted mb-3 opacity-25"></i>
                     <h5>暂无群组</h5>
-                    <p class="text-muted">将机器人拉入群组并设为管理员，刷新后即可显示。</p>
-                    <a href="/core/select_group" class="btn btn-primary mt-2">刷新列表</a>
+                    <p class="text-muted">将机器人拉入群组并设为管理员，然后点击刷新。</p>
+                    <a href="/core/select_group" class="btn btn-primary mt-2 rounded-pill px-4">刷新列表</a>
                 </div>
             </div>
             {% endif %}
