@@ -17,7 +17,7 @@
                         {% for f in fields %}<th>{{ f.label }}</th>{% endfor %}
                         <th>状态</th>
                         <th>过期时间</th>
-                        <th class="text-end pe-4">管理</th>
+                        <th class="text-end pe-4" style="min-width: 150px;">管理</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -39,9 +39,9 @@
                         <td class="text-end pe-4">
                             <!-- 推送按钮 -->
                             <button class="btn btn-sm btn-light text-warning" onclick="pushUser({{ u.id }})" title="推送到频道">
-                                <i class="fa-solid fa-bullhorn"></i>
+                                <i class="fa-solid fa-paper-plane"></i>
                             </button>
-                            <!-- 编辑按钮 -->
+                            <!-- 编辑按钮 (关键修复) -->
                             <button class="btn btn-sm btn-light text-primary" 
                                     data-id="{{ u.id }}" 
                                     data-tgid="{{ u.tg_id }}"
