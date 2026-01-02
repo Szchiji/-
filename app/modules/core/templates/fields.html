@@ -1,4 +1,4 @@
-{% extends "layout_admin.html" %}
+{% extends "base.html" %}
 
 {% block content %}
 <div class="card shadow mb-4">
@@ -17,7 +17,9 @@
 </div>
 
 <script>
-    let currentFields = {{ fields_json | safe }};
+    // ⚡️ 修复：增加默认值 []，防止后端传空值导致 JS 崩溃
+    let currentFields = {{ fields_json | safe }} || [];
+    
     function render() {
         let html = '';
         currentFields.forEach((f, idx) => {
@@ -25,11 +27,11 @@
             <div class="row g-2 align-items-center mb-3 pb-3 border-bottom field-item">
                 <div class="col-md-3">
                     <label class="small text-muted fw-bold">字段键名 (Key)</label>
-                    <input type="text" class="form-control bg-light" value="${f.key}" onchange="updateField(${idx}, 'key', this.value)" placeholder="如: age">
+                    <input type="text" class="form-control bg-light" value="${f.key || ''}" onchange="updateField(${idx}, 'key', this.value)" placeholder="如: age">
                 </div>
                 <div class="col-md-3">
                     <label class="small text-muted fw-bold">显示名称 (Label)</label>
-                    <input type="text" class="form-control fw-bold" value="${f.label}" onchange="updateField(${idx}, 'label', this.value)" placeholder="如: 年龄">
+                    <input type="text" class="form-control fw-bold" value="${f.label || ''}" onchange="updateField(${idx}, 'label', this.value)" placeholder="如: 年龄">
                 </div>
                 <div class="col-md-2">
                     <label class="small text-muted fw-bold">类型</label>
@@ -49,10 +51,27 @@
         });
         $('#fields-container').html(html);
     }
-    function addField() { currentFields.push({key: '', label: '', type: 'text', options: ''}); render(); }
-    function removeField(idx) { currentFields.splice(idx, 1); render(); }
-    function updateField(idx, key, val) { currentFields[idx][key] = val; if(key === 'type') render(); }
-    async function saveFields() { await postApi('/core/api/save_fields', {fields: currentFields}); }
-    render();
+    
+    function addField() { 
+        currentFields.push({key: '', label: '', type: 'text', options: ''}); 
+        render(); 
+    }
+    
+    function removeField(idx) { 
+        currentFields.splice(idx, 1); 
+        render(); 
+    }
+    
+    function updateField(idx, key, val) { 
+        currentFields[idx][key] = val; 
+        if(key === 'type') render(); 
+    }
+    
+    async function saveFields() { 
+        await postApi('/core/api/save_fields', {fields: currentFields}); 
+    }
+    
+    // 初始化渲染
+    document.addEventListener('DOMContentLoaded', render);
 </script>
 {% endblock %}
