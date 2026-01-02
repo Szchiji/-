@@ -10,28 +10,33 @@ core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templ
 
 # 全局变量
 global_ptb_app = None
-global_bot_loop = None
 
 # --- Webhook 接收端点 ---
 @core_bp.route('/webhook', methods=['POST'])
 def webhook():
+    """接收 Telegram 推送"""
     if not global_ptb_app:
         return "Bot Not Ready", 503
     
     try:
         json_data = request.get_json(force=True)
-        # 在新的 Loop 中处理 Update，避免 RuntimeError
+        # 使用 asyncio.run 运行异步处理函数
         asyncio.run(process_update_safe(json_data))
         return "OK", 200
     except Exception as e:
         print(f"❌ Webhook Error: {e}")
+        # 出错也返回 200，防止 Telegram 重复推送死循环
         return "Error", 200
 
 async def process_update_safe(data):
     """安全处理 Update"""
-    async with global_ptb_app: # 上下文管理器自动处理初始化
+    try:
+        # 这里不要再用 async with global_ptb_app，因为它已经初始化过了
+        # 直接反序列化并处理
         update = Update.de_json(data, global_ptb_app.bot)
         await global_ptb_app.process_update(update)
+    except Exception as e:
+        print(f"⚠️ 处理消息失败: {e}")
 
 # --- Context ---
 @core_bp.context_processor
@@ -140,7 +145,6 @@ def api_save_user():
     d = request.json
     gid = d.get('group_id') or session.get('current_group_id')
     try:
-        # ⚡️ 修复：安全处理空字符串
         tg_id_raw = d.get('tg_id')
         if not tg_id_raw: return jsonify({"status": "err", "msg": "Telegram ID 不能为空"})
         tg_id = int(tg_id_raw)
@@ -151,10 +155,8 @@ def api_save_user():
             db.session.add(u)
         u.profile_data = json.dumps(d.get('profile', {}), ensure_ascii=False)
         
-        # ⚡️ 修复：如果是空字符串，默认为 0
         days_raw = d.get('add_days')
         days = int(days_raw) if days_raw and str(days_raw).strip() else 0
-        
         if days:
             now = datetime.now()
             base = u.expiration_date if (u.expiration_date and u.expiration_date > now) else now
@@ -223,7 +225,7 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 🤖 机器人逻辑 (初始化函数)
+# 🤖 机器人逻辑
 # =======================
 
 async def run_bot():
@@ -231,23 +233,18 @@ async def run_bot():
     global global_ptb_app
     token = os.getenv('TOKEN')
     
-    # 1. 构建 App
     app_bot = Application.builder().token(token).build()
     
-    # 2. 注册处理器
     app_bot.add_handler(CommandHandler("start", bot_start))
     app_bot.add_handler(CallbackQueryHandler(pagination_callback))
     app_bot.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
     app_bot.add_handler(MessageHandler(filters.ALL, bot_handler))
     
-    # 3. 初始化并启动
     await app_bot.initialize()
     await app_bot.start()
     
-    # 4. 赋值全局变量
     global_ptb_app = app_bot
     
-    # 5. 设置 Webhook
     domain = os.getenv('RAILWAY_PUBLIC_DOMAIN')
     if domain:
         url = f"https://{domain}/core/webhook"
@@ -259,6 +256,25 @@ async def run_bot():
         await asyncio.Event().wait()
 
 # --- 业务逻辑 ---
+
+async def bot_start(update: Update, context):
+    """
+    处理 /start 指令
+    """
+    if update.effective_chat.type == 'private':
+        user_id = update.effective_user.id
+        admin_id = int(os.getenv('ADMIN_ID', 0))
+        
+        # ⚡️ 修复点：无论是不是管理员，都回复消息
+        if user_id == admin_id:
+            token = jwt.encode({'uid': user_id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY'), algorithm='HS256')
+            domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')
+            url = f"https://{domain}/core/magic_login?token={token}" if domain else f"/core/magic_login?token={token}"
+            await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
+        else:
+            # 普通用户回复
+            await update.message.reply_html(f"👋 你好！我是打卡机器人。\n你的 ID 是：<code>{user_id}</code>\n(请将此 ID 填入 Railway 的 ADMIN_ID 变量以获取管理权限)")
+
 def do_like(chat_id, message_id, emoji):
     token = os.getenv('TOKEN')
     try: 
@@ -380,12 +396,6 @@ async def get_group_info_safe(chat):
             db.session.add(bg)
             db.session.commit()
         return {'id': bg.id, 'is_active': bg.is_active, 'config': bg.config, 'fields_config': bg.fields_config}
-
-async def bot_start(update: Update, context):
-    if update.effective_chat.type == 'private' and update.effective_user.id == int(os.getenv('ADMIN_ID', 0)):
-        token = jwt.encode({'uid': update.effective_user.id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY'), algorithm='HS256')
-        url = f"{os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')}/core/magic_login?token={token}"
-        await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
 
 async def bot_handler(update: Update, context):
     msg = update.message or update.channel_post
