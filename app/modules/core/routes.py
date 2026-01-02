@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, session, jsonify
 from app import db
 from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions, ChatMember
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ChatMemberHandler, filters
 import os, jwt, time, json, asyncio, re, requests, math
 from datetime import datetime, timedelta
@@ -14,7 +14,7 @@ http = requests.Session()
 def inject_context():
     data = {'all_groups': []}
     if session.get('logged_in'):
-        # 侧边栏/列表只显示活跃群组，或排序时活跃的在前面
+        # 只显示活跃的群组，或者全部显示但标明状态
         data['all_groups'] = BotGroup.query.order_by(BotGroup.is_active.desc(), BotGroup.updated_at.desc()).all()
     gid = session.get('current_group_id')
     if gid: data['current_group'] = BotGroup.query.get(gid)
@@ -41,7 +41,7 @@ def get_group_fields(group):
         except: pass
     return DEFAULT_FIELDS
 
-# --- Web Routes (部分保持不变) ---
+# --- Web Routes (Unchanged) ---
 @core_bp.route('/')
 def index(): return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
 
@@ -49,11 +49,10 @@ def index(): return redirect('/core/select_group') if session.get('logged_in') e
 def page_select_group():
     if not session.get('logged_in'): return redirect('/core')
     session.pop('current_group_id', None)
-    # 按活跃状态排序：活跃的在前
+    # 优先显示活跃群组
     groups = BotGroup.query.order_by(BotGroup.is_active.desc(), BotGroup.updated_at.desc()).all()
     return render_template('select_group.html', groups=groups)
 
-# ... (省略 dashboard, users, fields, settings 等未修改的路由，保持原样即可) ...
 @core_bp.route('/group/<int:gid>/dashboard')
 def page_dashboard(gid):
     if not session.get('logged_in'): return redirect('/core')
@@ -89,7 +88,6 @@ def page_settings(gid):
     return render_template('settings.html', page='settings', group=group, conf=conf, fields=fields)
 
 # --- APIs ---
-# ... (API部分保持不变，除了 toggle_group) ...
 @core_bp.route('/api/save_settings', methods=['POST'])
 def api_save_settings():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
@@ -126,12 +124,14 @@ def api_save_user():
             u = GroupUser(group_id=gid, tg_id=tg_id)
             db.session.add(u)
         u.profile_data = json.dumps(d.get('profile', {}), ensure_ascii=False)
+        
         days = int(d.get('add_days', 0))
         if days:
             now = datetime.now()
             base = u.expiration_date if (u.expiration_date and u.expiration_date > now) else now
             u.expiration_date = base + timedelta(days=days)
             u.is_banned = False 
+            
         db.session.commit()
         return jsonify({"status": "ok"})
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
@@ -173,11 +173,7 @@ def api_toggle_group():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     group = BotGroup.query.get(request.json.get('id'))
     if group:
-        # 允许手动开启或关闭，也可以用于手动删除
-        if request.json.get('action') == 'delete':
-             db.session.delete(group)
-        else:
-             group.is_active = request.json.get('active')
+        group.is_active = request.json.get('active')
         db.session.commit()
     return jsonify({"status": "ok"})
 
@@ -202,11 +198,10 @@ def do_like(chat_id, message_id, emoji):
     token = os.getenv('TOKEN')
     try: 
         requests.post(f"https://api.telegram.org/bot{token}/setMessageReaction", 
-            json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": emoji}]}, timeout=(3.05, 5))
+            json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": emoji}]}, timeout=(2, 2))
     except: pass
 
 async def check_expiration_and_mute(context, group_id, user_id, chat_id, conf):
-    # ... (保持不变) ...
     from app import create_app
     with create_app().app_context():
         u = GroupUser.query.filter_by(group_id=group_id, tg_id=int(user_id)).first()
@@ -226,7 +221,6 @@ async def check_expiration_and_mute(context, group_id, user_id, chat_id, conf):
                 db.session.commit()
             except: pass
 
-# ... (do_query_page, build_list_text 等保持不变) ...
 def build_list_text(users, page, per_page, conf, fields, header):
     start = (page - 1) * per_page
     current_users = users[start:start+per_page]
@@ -275,10 +269,10 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
             header = conf.get('msg_filter_header', '🔍 <b>筛选结果：</b>')
         else:
             header = conf.get('msg_query_header', '🔍 <b>今日在线：</b>')
+            
         users = base.order_by(GroupUser.checkin_time.desc()).all()
-        if not users:
-            text = f"😢 没找到 '{kw}' 的相关用户" if kw else "😢 今日暂无打卡"
-            return text, None, None
+        if not users: return None, None, None
+        
         page_size = safe_int(conf.get('page_size'), 10)
         total_pages = math.ceil(len(users) / page_size) or 1
         if page > total_pages: page = total_pages
@@ -287,40 +281,42 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
         markup = get_pagination_markup(page, total_pages, kw, conf)
         return text, markup, users
 
-# --- 核心：机器人入群/退群感知 ---
+# --- 🆕 群组成员状态监听 (自动退群/激活) ---
 async def chat_member_handler(update: Update, context):
     chat = update.effective_chat
-    if not chat: return
+    if chat.type not in ['group', 'supergroup', 'channel']: return
     
-    # 获取我的成员状态变化
-    my_status = update.my_chat_member
-    if not my_status: 
-        # 如果不是 my_chat_member 更新，可能是普通消息里的 group_chat_created 等
+    # 获取我的状态更新
+    my_chat_member = update.my_chat_member
+    if not my_chat_member: 
+        # 如果不是机器人状态变更，仅做记录逻辑
         await get_group_info_safe(chat)
         return
 
-    new_status = my_status.new_chat_member.status
+    new_status = my_chat_member.new_chat_member.status
     
     from app import create_app
     with create_app().app_context():
         bg = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
         
-        # 机器人被踢出 / 离开 / 封禁
-        if new_status in ['left', 'kicked', 'banned']:
+        # 机器人被踢出或离开
+        if new_status in [ChatMember.LEFT, ChatMember.BANNED]:
             if bg:
-                print(f"👋 机器人离开群组 {chat.title} ({chat.id})，标记为停用")
-                bg.is_active = False
+                print(f"👋 机器人离开群组: {chat.title} ({chat.id})")
+                bg.is_active = False # 标记为不活跃
                 db.session.commit()
         
-        # 机器人加入 / 被提升为管理员
-        elif new_status in ['member', 'administrator']:
+        # 机器人加入或被提升管理员
+        elif new_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR]:
             if not bg:
-                bg = BotGroup(chat_id=str(chat.id), is_active=True, type=chat.type, title=chat.title)
+                bg = BotGroup(chat_id=str(chat.id), type=chat.type, title=chat.title, is_active=True)
                 bg.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
                 db.session.add(bg)
+                print(f"🎉 机器人加入新群组: {chat.title} ({chat.id})")
             else:
-                bg.is_active = True
+                bg.is_active = True # 重新激活
                 bg.title = chat.title # 更新群名
+                print(f"🔙 机器人回归群组: {chat.title} ({chat.id})")
             db.session.commit()
 
 async def get_group_info_safe(chat):
@@ -329,12 +325,17 @@ async def get_group_info_safe(chat):
     with create_app().app_context():
         bg = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
         if not bg:
-            # 只有第一次见到才创建，默认激活
             bg = BotGroup(chat_id=str(chat.id), is_active=True, type=chat.type, title=chat.title)
             bg.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
             db.session.add(bg)
             db.session.commit()
         return {'id': bg.id, 'is_active': bg.is_active, 'config': bg.config, 'fields_config': bg.fields_config}
+
+async def bot_start(update: Update, context):
+    if update.effective_chat.type == 'private' and update.effective_user.id == int(os.getenv('ADMIN_ID', 0)):
+        token = jwt.encode({'uid': update.effective_user.id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY'), algorithm='HS256')
+        url = f"{os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')}/core/magic_login?token={token}"
+        await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
 
 async def bot_handler(update: Update, context):
     msg = update.message or update.channel_post
@@ -342,21 +343,19 @@ async def bot_handler(update: Update, context):
     if msg.chat.type not in ['group', 'supergroup', 'channel']: return
     
     g_info = await get_group_info_safe(update.effective_chat)
-    # 如果群组被标记为非活跃（被踢出），则不处理任何消息
     if not g_info or not g_info['is_active']: return
 
-    # ... (其余 bot_handler 逻辑与之前完全一致) ...
     class Mock:
         def __init__(self, c, f): self.config=c; self.fields_config=f
     mock_g = Mock(g_info['config'], g_info['fields_config'])
     conf = get_group_conf(mock_g)
     fields = get_group_fields(mock_g)
     gid = g_info['id']
+    
     if not update.effective_user: return
     user = update.effective_user
     text = msg.text.strip() if msg.text else ""
 
-    # 1. 绝杀：点赞
     if conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
@@ -366,14 +365,15 @@ async def bot_handler(update: Update, context):
                 if conf.get('auto_mute_expired'): 
                     await check_expiration_and_mute(context, gid, user.id, msg.chat.id, conf)
 
-    # 2. 打卡
     checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
     if text in checkin_cmds:
         if not conf.get('checkin_open'): return
+        from app import create_app
         with create_app().app_context():
             u = GroupUser.query.filter_by(group_id=gid, tg_id=int(user.id)).first()
             if not u: r = await msg.reply_html(conf.get('msg_not_registered'))
-            elif u.checkin_time and u.checkin_time.date() == datetime.now().date(): r = await msg.reply_html(conf.get('msg_repeat_checkin'))
+            elif u.checkin_time and u.checkin_time.date() == datetime.now().date():
+                r = await msg.reply_html(conf.get('msg_repeat_checkin'))
             else:
                 u.checkin_time = datetime.now()
                 u.online = True
@@ -382,35 +382,36 @@ async def bot_handler(update: Update, context):
             context.job_queue.run_once(lambda c: c.job.data.delete(), safe_int(conf.get('checkin_del_time'), 30), data=r)
         return
 
-    # 3. 查询
     query_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
-    # A. 精确普通查询
-    if conf.get('query_open') and text in query_cmds:
-        text_resp, markup, _ = await do_query_page(msg.chat.id, gid, conf, fields, None, 1)
-        sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
-        context.job_queue.run_once(lambda c: c.job.data.delete(), safe_int(conf.get('query_del_time'), 60), data=sent)
-        return
-    # B. 筛选查询
     kw = None
-    if conf.get('query_filter_open'):
+    is_search = False
+
+    if conf.get('query_open') and text in query_cmds:
+        is_search = True
+        kw = None 
+    elif conf.get('query_filter_open'):
         matched_prefix = next((c for c in query_cmds if text.startswith(c + " ")), None)
         if matched_prefix:
             kw = text[len(matched_prefix):].strip()
+            is_search = True
         elif len(text) > 0 and len(text) < 15 and not text.startswith('/'):
             kw = text
-    if kw:
+            is_search = True
+
+    if is_search:
         text_resp, markup, users = await do_query_page(msg.chat.id, gid, conf, fields, kw, 1)
         if kw and not users: return 
-        if not kw and not users: text_resp = "😢 今日暂无打卡"; markup = None
+        if not kw and not users:
+            text_resp = "😢 今日暂无打卡"
+            markup = None
         if text_resp:
             sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
             context.job_queue.run_once(lambda c: c.job.data.delete(), safe_int(conf.get('query_del_time'), 60), data=sent)
 
-# ... (pagination_callback, bot_start, run_bot 保持不变) ...
 async def pagination_callback(update: Update, context):
     query = update.callback_query
     if query.data == "noop": return await query.answer()
-    parts = query.data.split('|') 
+    parts = query.data.split('|')
     page = int(parts[1])
     kw = parts[2] if parts[2] != "None" else None
     g_info = await get_group_info_safe(update.effective_chat)
@@ -426,12 +427,6 @@ async def pagination_callback(update: Update, context):
         await query.answer()
     except: await query.answer()
 
-async def bot_start(update: Update, context):
-    if update.effective_chat.type == 'private' and update.effective_user.id == int(os.getenv('ADMIN_ID', 0)):
-        token = jwt.encode({'uid': update.effective_user.id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY'), algorithm='HS256')
-        url = f"{os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')}/core/magic_login?token={token}"
-        await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
-
 async def run_bot():
     import app 
     token = os.getenv('TOKEN')
@@ -440,6 +435,7 @@ async def run_bot():
     app.global_loop = asyncio.get_running_loop()
     app_bot.add_handler(CommandHandler("start", bot_start))
     app_bot.add_handler(CallbackQueryHandler(pagination_callback))
+    # ⚡️ 注册 ChatMemberHandler 监听成员变动
     app_bot.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
     app_bot.add_handler(MessageHandler(filters.ALL, bot_handler))
     await app_bot.initialize()
