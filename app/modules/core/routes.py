@@ -9,12 +9,14 @@ from datetime import datetime, timedelta
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
 http = requests.Session()
 
+# 全局机器人应用实例
+ptb_app = None
+
 # --- Context ---
 @core_bp.context_processor
 def inject_context():
     data = {'all_groups': []}
     if session.get('logged_in'):
-        # 只显示活跃的群组，或者全部显示但标明状态
         data['all_groups'] = BotGroup.query.order_by(BotGroup.is_active.desc(), BotGroup.updated_at.desc()).all()
     gid = session.get('current_group_id')
     if gid: data['current_group'] = BotGroup.query.get(gid)
@@ -41,7 +43,7 @@ def get_group_fields(group):
         except: pass
     return DEFAULT_FIELDS
 
-# --- Web Routes (Unchanged) ---
+# --- Web Routes ---
 @core_bp.route('/')
 def index(): return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
 
@@ -49,7 +51,6 @@ def index(): return redirect('/core/select_group') if session.get('logged_in') e
 def page_select_group():
     if not session.get('logged_in'): return redirect('/core')
     session.pop('current_group_id', None)
-    # 优先显示活跃群组
     groups = BotGroup.query.order_by(BotGroup.is_active.desc(), BotGroup.updated_at.desc()).all()
     return render_template('select_group.html', groups=groups)
 
@@ -124,14 +125,12 @@ def api_save_user():
             u = GroupUser(group_id=gid, tg_id=tg_id)
             db.session.add(u)
         u.profile_data = json.dumps(d.get('profile', {}), ensure_ascii=False)
-        
         days = int(d.get('add_days', 0))
         if days:
             now = datetime.now()
             base = u.expiration_date if (u.expiration_date and u.expiration_date > now) else now
             u.expiration_date = base + timedelta(days=days)
             u.is_banned = False 
-            
         db.session.commit()
         return jsonify({"status": "ok"})
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
@@ -173,7 +172,10 @@ def api_toggle_group():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     group = BotGroup.query.get(request.json.get('id'))
     if group:
-        group.is_active = request.json.get('active')
+        if request.json.get('action') == 'delete':
+             db.session.delete(group)
+        else:
+             group.is_active = request.json.get('active')
         db.session.commit()
     return jsonify({"status": "ok"})
 
@@ -191,14 +193,75 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 🤖 机器人逻辑
+# 📡 Webhook 路由
 # =======================
+
+@core_bp.route('/webhook', methods=['POST'])
+def telegram_webhook():
+    """
+    接收 Telegram 推送的消息
+    """
+    if ptb_app is None:
+        return "Bot not initialized", 500
+    
+    # 接收 JSON 数据
+    update_json = request.get_json(force=True)
+    # 转换为 Telegram 对象
+    update = Update.de_json(update_json, ptb_app.bot)
+    
+    # 在同步 Flask 中运行异步 Bot 逻辑
+    try:
+        # 使用 asyncio.run 可能会冲突，因为 Application 内部有 event loop
+        # 我们创建一个新的 loop 专门处理这个请求
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(ptb_app.process_update(update))
+        loop.close()
+    except Exception as e:
+        print(f"❌ Webhook Error: {e}")
+        return "Error", 500
+        
+    return "OK"
+
+# =======================
+# 🤖 机器人初始化与逻辑
+# =======================
+
+async def init_webhook_bot(webhook_domain):
+    """
+    初始化机器人并设置 Webhook
+    """
+    global ptb_app
+    token = os.getenv('TOKEN')
+    
+    print("🤖 正在构建机器人应用...", flush=True)
+    ptb_app = Application.builder().token(token).build()
+    
+    # 注册处理器
+    ptb_app.add_handler(CommandHandler("start", bot_start))
+    ptb_app.add_handler(CallbackQueryHandler(pagination_callback))
+    ptb_app.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
+    ptb_app.add_handler(MessageHandler(filters.ALL, bot_handler))
+    
+    # 初始化应用
+    await ptb_app.initialize()
+    await ptb_app.start()
+    
+    # 设置 Webhook
+    webhook_url = f"https://{webhook_domain}/core/webhook"
+    print(f"🔗 正在设置 Webhook: {webhook_url}", flush=True)
+    await ptb_app.bot.set_webhook(webhook_url)
+    print("✅ Webhook 设置成功！", flush=True)
+    
+    return ptb_app
+
+# --- 业务逻辑 (保持不变) ---
 
 def do_like(chat_id, message_id, emoji):
     token = os.getenv('TOKEN')
     try: 
         requests.post(f"https://api.telegram.org/bot{token}/setMessageReaction", 
-            json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": emoji}]}, timeout=(2, 2))
+            json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": emoji}]}, timeout=(3.05, 5))
     except: pass
 
 async def check_expiration_and_mute(context, group_id, user_id, chat_id, conf):
@@ -269,10 +332,8 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
             header = conf.get('msg_filter_header', '🔍 <b>筛选结果：</b>')
         else:
             header = conf.get('msg_query_header', '🔍 <b>今日在线：</b>')
-            
         users = base.order_by(GroupUser.checkin_time.desc()).all()
         if not users: return None, None, None
-        
         page_size = safe_int(conf.get('page_size'), 10)
         total_pages = math.ceil(len(users) / page_size) or 1
         if page > total_pages: page = total_pages
@@ -281,42 +342,29 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
         markup = get_pagination_markup(page, total_pages, kw, conf)
         return text, markup, users
 
-# --- 🆕 群组成员状态监听 (自动退群/激活) ---
 async def chat_member_handler(update: Update, context):
     chat = update.effective_chat
     if chat.type not in ['group', 'supergroup', 'channel']: return
-    
-    # 获取我的状态更新
     my_chat_member = update.my_chat_member
     if not my_chat_member: 
-        # 如果不是机器人状态变更，仅做记录逻辑
         await get_group_info_safe(chat)
         return
-
     new_status = my_chat_member.new_chat_member.status
-    
     from app import create_app
     with create_app().app_context():
         bg = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
-        
-        # 机器人被踢出或离开
         if new_status in [ChatMember.LEFT, ChatMember.BANNED]:
             if bg:
-                print(f"👋 机器人离开群组: {chat.title} ({chat.id})")
-                bg.is_active = False # 标记为不活跃
+                bg.is_active = False 
                 db.session.commit()
-        
-        # 机器人加入或被提升管理员
         elif new_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR]:
             if not bg:
                 bg = BotGroup(chat_id=str(chat.id), type=chat.type, title=chat.title, is_active=True)
                 bg.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
                 db.session.add(bg)
-                print(f"🎉 机器人加入新群组: {chat.title} ({chat.id})")
             else:
-                bg.is_active = True # 重新激活
-                bg.title = chat.title # 更新群名
-                print(f"🔙 机器人回归群组: {chat.title} ({chat.id})")
+                bg.is_active = True 
+                bg.title = chat.title 
             db.session.commit()
 
 async def get_group_info_safe(chat):
@@ -426,19 +474,3 @@ async def pagination_callback(update: Update, context):
         await query.edit_message_text(text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
         await query.answer()
     except: await query.answer()
-
-async def run_bot():
-    import app 
-    token = os.getenv('TOKEN')
-    app_bot = Application.builder().token(token).build()
-    app.global_bot = app_bot.bot
-    app.global_loop = asyncio.get_running_loop()
-    app_bot.add_handler(CommandHandler("start", bot_start))
-    app_bot.add_handler(CallbackQueryHandler(pagination_callback))
-    # ⚡️ 注册 ChatMemberHandler 监听成员变动
-    app_bot.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
-    app_bot.add_handler(MessageHandler(filters.ALL, bot_handler))
-    await app_bot.initialize()
-    await app_bot.start()
-    await app_bot.updater.start_polling()
-    await asyncio.Event().wait()
