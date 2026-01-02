@@ -113,3 +113,4 @@
     function pushUser(id){ if(confirm('推送?')) fetch('/core/api/push_user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(r=>r.json()).then(d=>alert(d.msg)); }
 </script>
 {% endblock %}
+ 
