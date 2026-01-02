@@ -1,16 +1,14 @@
 {% extends "base.html" %}
 
 {% block body %}
-<!-- 左侧侧边栏 -->
+<!-- 侧边栏 -->
 <nav class="sidebar">
     <div class="sidebar-brand">
         <i class="fa-solid fa-robot me-2"></i> Bot Admin
     </div>
     
     <div class="nav flex-column py-3 px-2">
-        <div class="px-3 mb-2 text-xs fw-bold text-muted text-uppercase" style="font-size: 0.75rem;">
-            当前群组
-        </div>
+        <div class="px-3 mb-2 text-xs fw-bold text-muted text-uppercase" style="font-size: 0.75rem;">当前群组</div>
         <div class="px-3 mb-3 fw-bold text-truncate" title="{{ current_group.title }}">
             {{ current_group.title }}
         </div>
@@ -39,29 +37,21 @@
     </div>
 </nav>
 
-<!-- 右侧主内容区 -->
+<!-- 主内容区 -->
 <div class="main-wrapper">
-    <!-- 顶部栏 -->
     <header class="topbar">
-        <div class="d-flex align-items-center">
-            <!-- 手机端菜单开关 (预留) -->
-            <i class="fa-solid fa-bars d-md-none me-3 text-muted cursor-pointer"></i>
-            <h5 class="mb-0 fw-bold text-dark">
-                {% if page=='dashboard' %}数据概览{% endif %}
-                {% if page=='users' %}用户管理{% endif %}
-                {% if page=='fields' %}字段配置{% endif %}
-                {% if page=='settings' %}功能设置{% endif %}
-            </h5>
-        </div>
+        <h5 class="mb-0 fw-bold text-dark me-auto">
+            {% if page=='dashboard' %}数据概览{% endif %}
+            {% if page=='users' %}用户管理{% endif %}
+            {% if page=='fields' %}字段配置{% endif %}
+            {% if page=='settings' %}功能设置{% endif %}
+        </h5>
         
-        <div class="d-flex align-items-center">
-            <a href="https://t.me/{{ current_group.username }}" target="_blank" class="btn btn-sm btn-light text-primary me-2">
-                <i class="fa-brands fa-telegram"></i> 打开群组
-            </a>
-        </div>
+        <a href="https://t.me/{{ current_group.username }}" target="_blank" class="btn btn-sm btn-light text-primary">
+            <i class="fa-brands fa-telegram"></i> 打开群组
+        </a>
     </header>
     
-    <!-- 具体页面内容 -->
     <div class="content">
         {% block content %}{% endblock %}
     </div>
