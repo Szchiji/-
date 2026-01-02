@@ -3,124 +3,119 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bot Admin</title>
-    <!-- Bootstrap 5 -->
+    <title>Bot Manager</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- FontAwesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
-        body { background-color: #f3f4f6; font-family: -apple-system, system-ui, "Segoe UI", Helvetica, Arial, sans-serif; }
-        /* 侧边栏样式 */
-        .sidebar {
-            position: fixed; top: 0; bottom: 0; left: 0; z-index: 100;
-            padding: 48px 0 0; box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
-            background-color: #fff; width: 240px;
-        }
-        .sidebar .nav-link {
-            font-weight: 500; color: #333; padding: 12px 24px;
-            display: flex; align-items: center;
-        }
-        .sidebar .nav-link i { width: 24px; text-align: center; margin-right: 8px; color: #6c757d; }
-        .sidebar .nav-link:hover { color: #007bff; background-color: #f8f9fa; }
-        .sidebar .nav-link.active { color: #007bff; background-color: #e7f1ff; }
-        .sidebar .nav-link.active i { color: #007bff; }
+        :root { --primary-color: #4e73df; --bg-color: #f8f9fc; }
+        body { background-color: var(--bg-color); font-family: 'Segoe UI', Roboto, sans-serif; color: #5a5c69; }
         
-        /* 顶部导航 */
-        .navbar-top {
-            position: fixed; top: 0; right: 0; left: 240px; z-index: 101;
-            height: 56px; background-color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            padding: 0 24px; display: flex; align-items: center; justify-content: space-between;
-        }
+        /* 导航栏美化 */
+        .navbar { background: white; box-shadow: 0 .15rem 1.75rem 0 rgba(58,59,69,.15); padding: 0.8rem 1rem; }
+        .navbar-brand { font-weight: 800; letter-spacing: 1px; color: var(--primary-color) !important; }
         
-        /* 主内容区 */
-        .main-content {
-            margin-left: 240px; padding: 80px 24px 24px;
-        }
+        /* 卡片美化 */
+        .card { border: none; border-radius: 0.75rem; box-shadow: 0 .15rem 1.75rem 0 rgba(58,59,69,.15); transition: transform 0.2s; }
+        .card:hover { transform: translateY(-3px); }
+        .card-header { background-color: #f8f9fc; border-bottom: 1px solid #e3e6f0; padding: 1rem 1.25rem; font-weight: 700; color: var(--primary-color); border-top-left-radius: 0.75rem !important; border-top-right-radius: 0.75rem !important; }
         
-        /* 移动端适配 */
+        /* 侧边栏 (仅在管理页显示) */
+        .sidebar-wrapper { min-height: 100vh; background: #4e73df; background: linear-gradient(180deg,#4e73df 10%,#224abe 100%); width: 224px; position: fixed; left: 0; top: 0; bottom: 0; z-index: 1000; padding-top: 1rem; }
+        .sidebar-brand { color: white; text-decoration: none; font-weight: 800; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; padding-bottom: 1.5rem; margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.15); }
+        .nav-item .nav-link { color: rgba(255,255,255,.8); padding: 1rem; margin: 0 1rem; border-radius: 0.35rem; display: block; text-decoration: none; font-weight: 600; }
+        .nav-item .nav-link:hover { color: white; background: rgba(255,255,255,0.1); }
+        .nav-item .nav-link.active { background: white; color: #4e73df; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .nav-item .nav-link i { width: 20px; margin-right: 0.5rem; text-align: center; }
+        
+        /* 主内容偏移 */
+        .main-content-wrapper { margin-left: 224px; min-height: 100vh; display: flex; flex-direction: column; }
+        .top-bar { height: 70px; background: white; box-shadow: 0 .15rem 1.75rem 0 rgba(58,59,69,.15); display: flex; align-items: center; justify-content: flex-end; padding: 0 2rem; margin-bottom: 1.5rem; }
+        
+        /* 全屏模式 (选择群组页) */
+        .fullscreen-wrapper { width: 100%; min-height: 100vh; }
+        
         @media (max-width: 768px) {
-            .sidebar { transform: translateX(-100%); transition: transform 0.3s; }
-            .sidebar.show { transform: translateX(0); }
-            .navbar-top { left: 0; }
-            .main-content { margin-left: 0; }
-            .mobile-toggle { display: block !important; }
+            .sidebar-wrapper { display: none; }
+            .main-content-wrapper { margin-left: 0; }
+            .top-bar { justify-content: space-between; }
         }
-        .mobile-toggle { display: none; border: none; background: none; font-size: 24px; color: #333; }
-        
-        /* 卡片通用 */
-        .card { border: none; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.04); background: #fff; margin-bottom: 20px; }
-        .card-header { background: transparent; border-bottom: 1px solid #f0f0f0; padding: 16px 20px; font-weight: 600; }
-        .btn-primary { background-color: #007bff; border-color: #007bff; border-radius: 8px; }
     </style>
-    {% block css %}{% endblock %}
 </head>
 <body>
 
-<!-- 移动端遮罩 -->
-<div id="sidebarOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:99;" onclick="toggleSidebar()"></div>
-
-<!-- 侧边栏 -->
-<nav class="sidebar" id="sidebar">
-    <div class="px-4 mb-4 d-flex align-items-center">
-        <i class="fa-brands fa-telegram fa-2x text-primary me-2"></i>
-        <span class="fs-5 fw-bold">Bot Admin</span>
-    </div>
-    
-    <div class="nav flex-column">
-        {% if current_group %}
-            <div class="text-uppercase text-muted fw-bold px-4 mb-2 mt-2" style="font-size: 12px;">当前群组: {{ current_group.title[:8] }}...</div>
+{% if current_group and page != 'select_group' %}
+    <!-- 1. 管理模式布局 (左侧菜单 + 右侧内容) -->
+    <div class="sidebar-wrapper">
+        <a href="/core" class="sidebar-brand">
+            <i class="fa-solid fa-robot me-2"></i> Bot Admin
+        </a>
+        <div class="nav-item mb-2">
             <a class="nav-link {% if page == 'dashboard' %}active{% endif %}" href="/core/group/{{ current_group.id }}/dashboard">
-                <i class="fa-solid fa-chart-pie"></i> 仪表盘
+                <i class="fa-solid fa-gauge-high"></i> 仪表盘
             </a>
+        </div>
+        <div class="nav-item mb-2">
             <a class="nav-link {% if page == 'users' %}active{% endif %}" href="/core/group/{{ current_group.id }}/users">
                 <i class="fa-solid fa-users"></i> 用户管理
             </a>
+        </div>
+        <div class="nav-item mb-2">
             <a class="nav-link {% if page == 'fields' %}active{% endif %}" href="/core/group/{{ current_group.id }}/fields">
-                <i class="fa-solid fa-list-check"></i> 资料字段
+                <i class="fa-solid fa-pen-to-square"></i> 资料字段
             </a>
+        </div>
+        <div class="nav-item mb-2">
             <a class="nav-link {% if page == 'settings' %}active{% endif %}" href="/core/group/{{ current_group.id }}/settings">
-                <i class="fa-solid fa-sliders"></i> 功能配置
+                <i class="fa-solid fa-gear"></i> 功能配置
             </a>
-            <hr class="mx-3 my-2">
-        {% endif %}
-        
-        <a class="nav-link text-dark" href="/core/select_group">
-            <i class="fa-solid fa-exchange-alt"></i> 切换群组
-        </a>
-        <a class="nav-link text-danger" href="/core/logout">
-            <i class="fa-solid fa-right-from-bracket"></i> 退出登录
-        </a>
+        </div>
+        <hr style="border-top: 1px solid rgba(255,255,255,0.15); margin: 1.5rem 1rem;">
+        <div class="nav-item">
+            <a class="nav-link text-warning" href="/core/select_group">
+                <i class="fa-solid fa-arrow-left"></i> 切换群组
+            </a>
+        </div>
     </div>
-</nav>
 
-<!-- 顶部栏 -->
-<header class="navbar-top">
-    <button class="mobile-toggle me-3" onclick="toggleSidebar()">
-        <i class="fa-solid fa-bars"></i>
-    </button>
-    <h5 class="mb-0 fw-bold text-truncate">
-        {% if current_group %}{{ current_group.title }}{% else %}控制台{% endif %}
-    </h5>
-    <div>
-        <!-- 右侧预留 -->
+    <div class="main-content-wrapper">
+        <!-- 顶部栏 -->
+        <div class="top-bar">
+            <!-- 手机端菜单按钮 (仅占位) -->
+            <div class="d-md-none fw-bold text-primary">{{ current_group.title }}</div>
+            
+            <div class="d-flex align-items-center">
+                <span class="mr-2 d-none d-lg-inline text-gray-600 small me-3">{{ current_group.title }}</span>
+                <a href="/core/logout" class="btn btn-sm btn-circle btn-light shadow-sm text-danger">
+                    <i class="fas fa-sign-out-alt"></i>
+                </a>
+            </div>
+        </div>
+        <!-- 内容区 -->
+        <div class="container-fluid pb-5">
+            {% block content %}{% endblock %}
+        </div>
     </div>
-</header>
 
-<!-- 主内容 -->
-<main class="main-content">
-    {% block content %}{% endblock %}
-</main>
+{% else %}
+    <!-- 2. 全屏模式布局 (选择群组页) -->
+    <div class="fullscreen-wrapper">
+        <nav class="navbar navbar-light bg-white static-top shadow-sm mb-4">
+            <div class="container">
+                <a class="navbar-brand" href="#"><i class="fa-solid fa-robot me-2"></i>Bot Manager</a>
+                {% if session.get('logged_in') %}
+                <a class="btn btn-outline-danger btn-sm" href="/core/logout">退出</a>
+                {% endif %}
+            </div>
+        </nav>
+        <div class="container">
+            {% block full_content %}{% endblock %}
+        </div>
+    </div>
+{% endif %}
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
-    function toggleSidebar() {
-        const sb = document.getElementById('sidebar');
-        const ol = document.getElementById('sidebarOverlay');
-        sb.classList.toggle('show');
-        ol.style.display = sb.classList.contains('show') ? 'block' : 'none';
-    }
-    
     async function postApi(url, data) {
         try {
             const res = await fetch(url, {
@@ -129,13 +124,9 @@
                 body: JSON.stringify(data)
             });
             const json = await res.json();
-            if (json.status === 'ok') {
-                alert(json.msg || '操作成功');
-                location.reload();
-            } else {
-                alert('错误: ' + (json.msg || '未知错误'));
-            }
-        } catch(e) { alert('网络请求失败'); }
+            if (json.status === 'ok') { alert('✅ 操作成功'); location.reload(); } 
+            else { alert('❌ 失败: ' + (json.msg || '未知错误')); }
+        } catch (e) { alert('❌ 网络错误: ' + e); }
     }
 </script>
 {% block scripts %}{% endblock %}
