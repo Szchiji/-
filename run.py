@@ -9,7 +9,6 @@ from sqlalchemy import text
 app = create_app()
 
 def fix_database_schema(app):
-    """后台修复数据库"""
     time.sleep(3)
     with app.app_context():
         try:
@@ -28,18 +27,13 @@ def fix_database_schema(app):
 
 def run_flask():
     port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, use_reloader=False)
+    # 增加 threaded=True 确保并发处理
+    app.run(host='0.0.0.0', port=port, use_reloader=False, threaded=True)
 
 def start_bot_process():
-    """
-    统一的机器人启动入口
-    等待 Web 服务启动后，调用 routes.run_bot
-    """
-    time.sleep(5)
-    
-    # 必须在函数内部导入，确保 routes.py 已经加载了最新的代码
+    # 稍微多等一会儿，确保 Flask 彻底启动
+    time.sleep(10)
     from app.modules.core.routes import run_bot
-    
     print("🤖 正在启动机器人进程...", flush=True)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -55,16 +49,20 @@ if __name__ == '__main__':
     mode = "Webhook" if domain else "Polling"
     print(f"🚀 系统启动中 ({mode} 模式)...", flush=True)
 
-    # 1. 启动 Web 服务 (Flask)
+    # 1. 启动 Web (Flask)
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
-    # 2. 启动数据库修复
+    # 2. 数据库修复
     db_thread = threading.Thread(target=fix_database_schema, args=(app,), daemon=True)
     db_thread.start()
     
-    # 3. 启动机器人 (阻塞主线程)
+    # 3. 启动机器人
     try:
         start_bot_process()
+        print("🎉 系统已就绪，正在等待消息...", flush=True)
+        # 死循环保持容器不退出
+        while True:
+            time.sleep(3600)
     except KeyboardInterrupt:
         sys.exit(0)
