@@ -9,7 +9,6 @@
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f6f9; overflow-x: hidden; }
         
-        /* 侧边栏样式 */
         #sidebar {
             min-width: 250px; max-width: 250px; height: 100vh; position: fixed; top: 0; left: 0;
             background: #ffffff; color: #333; transition: all 0.3s; z-index: 999;
@@ -24,19 +23,16 @@
         #sidebar ul li.active > a { background: #e7f1ff; color: #0d6efd; border-right: 4px solid #0d6efd; }
         #sidebar ul li a i { margin-right: 10px; width: 20px; text-align: center; }
 
-        /* 内容区域 */
         #content { width: 100%; margin-left: 250px; transition: all 0.3s; min-height: 100vh; display: flex; flex-direction: column; }
         #content.active { margin-left: 0; }
         
-        /* 顶部导航 */
         .navbar { padding: 10px 20px; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-bottom: 1px solid #eee; }
         
-        /* 手机端适配 */
         @media (max-width: 768px) {
             #sidebar { margin-left: -250px; }
             #sidebar.active { margin-left: 0; }
             #content { margin-left: 0; }
-            #content.active { margin-left: 0; } /* 手机上内容不挤压，遮罩层模式 */
+            #content.active { margin-left: 0; }
             #sidebarOverlay { display: none; position: fixed; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 998; }
             #sidebarOverlay.active { display: block; }
         }
@@ -47,7 +43,6 @@
 {% if page != 'login' %}
 <div id="sidebarOverlay" onclick="toggleSidebar()"></div>
 
-<!-- 侧边栏 -->
 <nav id="sidebar">
     <div class="sidebar-header d-flex justify-content-between align-items-center">
         <h5 class="m-0 fw-bold text-primary"><i class="fa-brands fa-telegram me-2"></i>Bot Admin</h5>
@@ -55,6 +50,7 @@
     </div>
 
     <ul class="list-unstyled components">
+        {% if current_group %}
         <li class="{{ 'active' if page == 'dashboard' }}">
             <a href="/core/group/{{ current_group.id }}/dashboard"><i class="fa-solid fa-chart-line"></i> 数据概览</a>
         </li>
@@ -68,8 +64,10 @@
             <a href="/core/group/{{ current_group.id }}/settings"><i class="fa-solid fa-sliders"></i> 功能配置</a>
         </li>
         <li><hr class="dropdown-divider mx-3"></li>
+        {% endif %}
+        
         <li>
-            <a href="/core/select_group"><i class="fa-solid fa-exchange-alt"></i> 切换群组</a>
+            <a href="/core/select_group" class="{{ 'active' if not current_group else '' }}"><i class="fa-solid fa-exchange-alt"></i> 切换群组</a>
         </li>
         <li>
             <a href="/core/logout" class="text-danger"><i class="fa-solid fa-sign-out-alt"></i> 退出登录</a>
@@ -85,7 +83,11 @@
             <button type="button" id="sidebarCollapse" class="btn btn-primary btn-sm" onclick="toggleSidebar()">
                 <i class="fa-solid fa-bars"></i>
             </button>
+            {% if current_group %}
             <span class="ms-3 fw-bold text-secondary">{{ current_group.title }}</span>
+            {% else %}
+            <span class="ms-3 fw-bold text-secondary">请选择群组</span>
+            {% endif %}
         </div>
     </nav>
     {% endif %}
@@ -99,7 +101,6 @@
 <script>
     function toggleSidebar() {
         document.getElementById('sidebar').classList.toggle('active');
-        // 桌面端缩进内容，手机端显示遮罩
         if(window.innerWidth > 768) {
             document.getElementById('content').classList.toggle('active');
         } else {
