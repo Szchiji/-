@@ -27,7 +27,7 @@ def fix_database_schema(app):
 
 def run_flask():
     port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, use_reloader=False)
+    app.run(host='0.0.0.0', port=port, use_reloader=False, threaded=True)
 
 def start_bot_process_forever():
     """
@@ -40,7 +40,7 @@ def start_bot_process_forever():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
-    # 1. 初始化 (WebHook模式下 run_bot 会运行完设置 Webhook 后返回)
+    # 1. 初始化
     loop.run_until_complete(run_bot())
     
     # 2. ⚡️ 核心：让 Loop 永远跑下去，活着等待 Flask 的投喂
