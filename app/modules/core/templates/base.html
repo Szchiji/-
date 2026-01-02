@@ -3,99 +3,142 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bot Manager</title>
-    <!-- Bootstrap 5 CDN -->
+    <title>打卡机器人后台</title>
+    <!-- 引入 Bootstrap 5 和 FontAwesome -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- FontAwesome CDN -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <!-- Custom CSS -->
-    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
     <style>
-        body { background-color: #F2F2F7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .sidebar { min-height: calc(100vh - 60px); background: white; border-radius: 16px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
-        .nav-link-custom { color: #1C1C1E; padding: 12px 15px; border-radius: 10px; display: block; text-decoration: none; margin-bottom: 5px; font-weight: 500; transition: 0.2s; }
-        .nav-link-custom:hover { background: rgba(0,0,0,0.03); color: #007AFF; }
-        .nav-link-custom.active { background: rgba(0,122,255,0.1); color: #007AFF; }
-        .navbar-blur { background: rgba(255,255,255,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(0,0,0,0.05); }
-        .content-card { background: white; border-radius: 16px; border: none; box-shadow: 0 4px 20px rgba(0,0,0,0.05); padding: 25px; margin-bottom: 20px; }
-        .stat-num { font-size: 2.5rem; font-weight: 800; background: linear-gradient(45deg, #007AFF, #5856D6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        .navbar { box-shadow: 0 2px 4px rgba(0,0,0,.05); }
+        .card { border: none; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075); border-radius: 0.5rem; margin-bottom: 1.5rem; transition: transform 0.2s; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 0.5rem 1rem rgba(0,0,0,.15); }
+        .sidebar { min-height: calc(100vh - 56px); background: white; border-right: 1px solid #dee2e6; }
+        .nav-link.active { background-color: #e9ecef; color: #0d6efd; font-weight: 600; border-radius: 0.25rem; }
+        .nav-link { color: #495057; padding: 0.75rem 1rem; margin-bottom: 0.25rem; }
+        .nav-link:hover { background-color: #f8f9fa; color: #0d6efd; }
+        .nav-link i { width: 24px; text-align: center; margin-right: 8px; }
+        .main-content { padding: 2rem; }
+        /* 登录页样式 */
+        .login-container { height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .login-card { width: 100%; max-width: 400px; padding: 2rem; background: white; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.2); text-align: center; }
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .sidebar { display: none; } 
+            .main-content { padding: 1rem; }
+        }
     </style>
+    {% block head %}{% endblock %}
 </head>
 <body>
-    <!-- 顶部导航 -->
-    <nav class="navbar navbar-expand-lg fixed-top navbar-blur">
-        <div class="container-fluid px-4">
-            <a class="navbar-brand fw-bold" href="/core">
-                <i class="fa-brands fa-telegram text-primary me-2"></i>Bot Manager
+
+{% if page == 'login' %}
+    <div class="login-container">
+        <div class="login-card">
+            <div class="mb-4">
+                <i class="fa-solid fa-robot fa-3x text-primary"></i>
+            </div>
+            <h3>后台管理系统</h3>
+            <p class="text-muted mb-4">请在 Telegram 中发送 /start 获取登录链接</p>
+            <a href="https://t.me/{{ bot_username|default('您的机器人') }}" target="_blank" class="btn btn-primary w-100 btn-lg">
+                <i class="fa-brands fa-telegram me-2"></i>前往获取链接
             </a>
-            
-            <div class="ms-auto">
-                {% if session.get('logged_in') %}
-                    {% if current_group %}
-                    <span class="badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill me-2 d-none d-md-inline-block">
-                        {{ current_group.title }}
-                    </span>
-                    {% endif %}
-                    <a class="btn btn-sm btn-light text-danger" href="/core/logout">
-                        <i class="fa-solid fa-power-off"></i>
-                    </a>
+        </div>
+    </div>
+{% else %}
+    <!-- 顶部导航 -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-white sticky-top">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold" href="/core">
+                <i class="fa-solid fa-robot text-primary me-2"></i>打卡机器人
+            </a>
+            <div class="d-flex align-items-center">
+                {% if current_group %}
+                    <span class="badge bg-primary me-3 d-none d-md-block">{{ current_group.title }}</span>
                 {% endif %}
+                <a href="/core/logout" class="btn btn-outline-danger btn-sm">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                </a>
             </div>
         </div>
     </nav>
 
-    <!-- 主容器 -->
-    <div class="container-fluid px-4" style="margin-top: 80px;">
-        <div class="row g-4">
-            {% if current_group %}
-            <!-- 左侧菜单 (仅在进入群组后显示) -->
-            <div class="col-lg-2 d-none d-lg-block">
-                <div class="sidebar position-fixed" style="width: 15%; top: 80px;">
-                    <small class="text-uppercase text-muted fw-bold mb-3 d-block ps-2" style="font-size:0.75rem">MENU</small>
-                    <a href="/core/select_group" class="nav-link-custom mb-3 text-muted">
-                        <i class="fa-solid fa-arrow-left me-2" style="width:20px"></i> 切换群组
-                    </a>
-                    
-                    <a href="/core/group/{{ current_group.id }}/dashboard" class="nav-link-custom {{ 'active' if page=='dashboard' }}">
-                        <i class="fa-solid fa-chart-pie me-2" style="width:20px"></i> 数据概览
-                    </a>
-                    <a href="/core/group/{{ current_group.id }}/users" class="nav-link-custom {{ 'active' if page=='users' }}">
-                        <i class="fa-solid fa-users me-2" style="width:20px"></i> 用户管理
-                    </a>
-                    <a href="/core/group/{{ current_group.id }}/fields" class="nav-link-custom {{ 'active' if page=='fields' }}">
-                        <i class="fa-solid fa-list-check me-2" style="width:20px"></i> 资料字段
-                    </a>
-                    <a href="/core/group/{{ current_group.id }}/settings" class="nav-link-custom {{ 'active' if page=='settings' }}">
-                        <i class="fa-solid fa-sliders me-2" style="width:20px"></i> 功能配置
-                    </a>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- ⚡️ 修复：只有当 page 不是 select_group 时才显示侧边栏 -->
+            {% if page and page != 'select_group' %}
+            <!-- 侧边栏 -->
+            <nav class="col-md-3 col-lg-2 d-md-block sidebar py-3 collapse show">
+                <div class="position-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link {% if page == 'dashboard' %}active{% endif %}" href="/core/group/{{ current_group.id }}/dashboard">
+                                <i class="fa-solid fa-gauge-high"></i>数据概览
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if page == 'users' %}active{% endif %}" href="/core/group/{{ current_group.id }}/users">
+                                <i class="fa-solid fa-users"></i>用户管理
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if page == 'fields' %}active{% endif %}" href="/core/group/{{ current_group.id }}/fields">
+                                <i class="fa-solid fa-pen-to-square"></i>资料字段
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if page == 'settings' %}active{% endif %}" href="/core/group/{{ current_group.id }}/settings">
+                                <i class="fa-solid fa-gear"></i>功能配置
+                            </a>
+                        </li>
+                        <li class="nav-item mt-4 border-top pt-3">
+                            <a class="nav-link text-secondary" href="/core/select_group">
+                                <i class="fa-solid fa-arrow-left"></i>切换群组
+                            </a>
+                        </li>
+                    </ul>
                 </div>
-            </div>
-            
-            <!-- 移动端菜单 (仅小屏显示) -->
-            <div class="col-12 d-lg-none">
-                <div class="d-flex gap-2 overflow-auto pb-2">
-                    <a href="/core/select_group" class="btn btn-light"><i class="fa-solid fa-arrow-left"></i></a>
-                    <a href="/core/group/{{ current_group.id }}/dashboard" class="btn {{ 'btn-primary' if page=='dashboard' else 'btn-light' }}">概览</a>
-                    <a href="/core/group/{{ current_group.id }}/users" class="btn {{ 'btn-primary' if page=='users' else 'btn-light' }}">用户</a>
-                    <a href="/core/group/{{ current_group.id }}/settings" class="btn {{ 'btn-primary' if page=='settings' else 'btn-light' }}">设置</a>
-                </div>
-            </div>
-
-            <!-- 右侧内容 -->
-            <div class="col-lg-10 offset-lg-2">
-                {% block content %}{% endblock %}
-            </div>
-            {% else %}
-            <!-- 全屏模式 (选择群组页) -->
-            <div class="col-12">
-                {% block full_content %}{% endblock %}
-            </div>
+            </nav>
             {% endif %}
+
+            <!-- 主内容区域 (自动计算宽度) -->
+            <main class="{% if page and page != 'select_group' %}col-md-9 ms-sm-auto col-lg-10{% else %}col-12{% endif %} main-content">
+                {% block content %}{% endblock %}
+            </main>
         </div>
     </div>
+{% endif %}
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    {% block scripts %}{% endblock %}
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    // 通用 API 请求函数
+    async function postApi(url, data) {
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            const json = await res.json();
+            if (json.status === 'ok') {
+                showToast('success', json.msg || '操作成功');
+                return true;
+            } else {
+                showToast('danger', json.msg || '操作失败');
+                return false;
+            }
+        } catch (e) {
+            showToast('danger', '网络错误: ' + e);
+            return false;
+        }
+    }
+
+    function showToast(type, msg) {
+        // 简单提示框实现
+        alert(msg);
+        if (type === 'success') location.reload();
+    }
+</script>
+{% block scripts %}{% endblock %}
 </body>
 </html>
