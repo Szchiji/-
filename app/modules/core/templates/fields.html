@@ -1,4 +1,4 @@
-{% extends "layout_admin.html" %}
+{% extends "base.html" %}
 
 {% block content %}
 <div class="card shadow mb-4">
@@ -17,9 +17,10 @@
 </div>
 
 <script>
-    // ⚡️ 修复：增加默认值 []，防止后端传空值导致 JS 崩溃
+    // ⚡️ 修复：确保默认是数组，防止报错
     let currentFields = {{ fields_json | safe }} || [];
-    
+    if (!Array.isArray(currentFields)) currentFields = [];
+
     function render() {
         let html = '';
         currentFields.forEach((f, idx) => {
@@ -41,7 +42,7 @@
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <label class="small text-muted fw-bold">选项 (仅下拉有效)</label>
+                    <label class="small text-muted fw-bold">选项 (逗号分隔)</label>
                     <input type="text" class="form-control" value="${f.options||''}" onchange="updateField(${idx}, 'options', this.value)" ${f.type!='select'?'disabled':''} placeholder="A,B,C">
                 </div>
                 <div class="col-md-1 text-center pt-4">
@@ -49,6 +50,9 @@
                 </div>
             </div>`;
         });
+        if (currentFields.length === 0) {
+            html = '<div class="text-center text-muted py-4">暂无字段，请点击下方按钮添加。</div>';
+        }
         $('#fields-container').html(html);
     }
     
@@ -71,7 +75,9 @@
         await postApi('/core/api/save_fields', {fields: currentFields}); 
     }
     
-    // 初始化渲染
-    document.addEventListener('DOMContentLoaded', render);
+    // 确保 DOM 加载完成后渲染
+    $(document).ready(function() {
+        render();
+    });
 </script>
 {% endblock %}
