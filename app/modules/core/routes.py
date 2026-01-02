@@ -10,33 +10,29 @@ core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templ
 
 # 全局变量
 global_ptb_app = None
+global_bot_loop = None  # 🆕 新增：保存机器人的主循环
 
 # --- Webhook 接收端点 ---
 @core_bp.route('/webhook', methods=['POST'])
 def webhook():
     """接收 Telegram 推送"""
-    if not global_ptb_app:
+    # 必须确保机器人循环正在运行
+    if not global_ptb_app or not global_bot_loop:
         return "Bot Not Ready", 503
     
     try:
         json_data = request.get_json(force=True)
-        # 使用 asyncio.run 运行异步处理函数
-        asyncio.run(process_update_safe(json_data))
+        # 将 JSON 转回 Update 对象
+        update = Update.de_json(json_data, global_ptb_app.bot)
+        
+        # ⚡️ 核心修复：不要创建新循环，而是把任务“扔”给后台的主循环处理
+        # 这是一个线程安全的操作，不会导致 Event loop closed
+        asyncio.run_coroutine_threadsafe(global_ptb_app.process_update(update), global_bot_loop)
+        
         return "OK", 200
     except Exception as e:
         print(f"❌ Webhook Error: {e}")
-        # 出错也返回 200，防止 Telegram 重复推送死循环
         return "Error", 200
-
-async def process_update_safe(data):
-    """安全处理 Update"""
-    try:
-        # 这里不要再用 async with global_ptb_app，因为它已经初始化过了
-        # 直接反序列化并处理
-        update = Update.de_json(data, global_ptb_app.bot)
-        await global_ptb_app.process_update(update)
-    except Exception as e:
-        print(f"⚠️ 处理消息失败: {e}")
 
 # --- Context ---
 @core_bp.context_processor
@@ -48,8 +44,10 @@ def inject_context():
     if gid: data['current_group'] = BotGroup.query.get(gid)
     return data
 
-def safe_int(val, default=30):
-    try: return int(val) if str(val).strip() else default
+def safe_int(val, default=0):
+    if val is None: return default
+    if isinstance(val, str) and val.strip() == '': return default
+    try: return int(val)
     except: return default
 
 def get_group_conf(group):
@@ -145,18 +143,16 @@ def api_save_user():
     d = request.json
     gid = d.get('group_id') or session.get('current_group_id')
     try:
-        tg_id_raw = d.get('tg_id')
-        if not tg_id_raw: return jsonify({"status": "err", "msg": "Telegram ID 不能为空"})
-        tg_id = int(tg_id_raw)
-        
+        tg_id = safe_int(d.get('tg_id'))
+        if not tg_id: return jsonify({"status": "err", "msg": "Telegram ID 不能为空"})
+             
         u = GroupUser.query.filter_by(group_id=gid, tg_id=tg_id).first()
         if not u:
             u = GroupUser(group_id=gid, tg_id=tg_id)
             db.session.add(u)
         u.profile_data = json.dumps(d.get('profile', {}), ensure_ascii=False)
         
-        days_raw = d.get('add_days')
-        days = int(days_raw) if days_raw and str(days_raw).strip() else 0
+        days = safe_int(d.get('add_days'))
         if days:
             now = datetime.now()
             base = u.expiration_date if (u.expiration_date and u.expiration_date > now) else now
@@ -203,7 +199,8 @@ def api_toggle_group():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     group = BotGroup.query.get(request.json.get('id'))
     if group:
-        if request.json.get('action') == 'delete':
+        action = request.json.get('action')
+        if action == 'delete':
              GroupUser.query.filter_by(group_id=group.id).delete()
              db.session.delete(group)
         else:
@@ -225,12 +222,12 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 🤖 机器人逻辑
+# 🤖 机器人逻辑 (初始化函数)
 # =======================
 
 async def run_bot():
     """初始化机器人"""
-    global global_ptb_app
+    global global_ptb_app, global_bot_loop
     token = os.getenv('TOKEN')
     
     app_bot = Application.builder().token(token).build()
@@ -243,13 +240,17 @@ async def run_bot():
     await app_bot.initialize()
     await app_bot.start()
     
+    # ⚡️ 赋值全局变量，供 Webhook 使用
     global_ptb_app = app_bot
+    global_bot_loop = asyncio.get_running_loop() # 捕获当前运行的主循环
     
     domain = os.getenv('RAILWAY_PUBLIC_DOMAIN')
     if domain:
         url = f"https://{domain}/core/webhook"
         print(f"🔗 设置 Webhook: {url}", flush=True)
         await app_bot.bot.set_webhook(url)
+        # ⚡️ Webhook 模式下，主线程必须保持存活
+        await asyncio.Event().wait()
     else:
         print("📡 本地模式: 启动 Polling...", flush=True)
         await app_bot.updater.start_polling()
@@ -258,22 +259,15 @@ async def run_bot():
 # --- 业务逻辑 ---
 
 async def bot_start(update: Update, context):
-    """
-    处理 /start 指令
-    """
-    if update.effective_chat.type == 'private':
-        user_id = update.effective_user.id
-        admin_id = int(os.getenv('ADMIN_ID', 0))
-        
-        # ⚡️ 修复点：无论是不是管理员，都回复消息
-        if user_id == admin_id:
-            token = jwt.encode({'uid': user_id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY'), algorithm='HS256')
-            domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')
-            url = f"https://{domain}/core/magic_login?token={token}" if domain else f"/core/magic_login?token={token}"
-            await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
-        else:
-            # 普通用户回复
-            await update.message.reply_html(f"👋 你好！我是打卡机器人。\n你的 ID 是：<code>{user_id}</code>\n(请将此 ID 填入 Railway 的 ADMIN_ID 变量以获取管理权限)")
+    user_id = update.effective_user.id
+    admin_id = int(os.getenv('ADMIN_ID', 0))
+    if user_id == admin_id:
+        token = jwt.encode({'uid': user_id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY'), algorithm='HS256')
+        domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')
+        url = f"https://{domain}/core/magic_login?token={token}" if domain else f"/core/magic_login?token={token}"
+        await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
+    else:
+        await update.message.reply_html(f"👋 你好！我是打卡机器人。\n你的 ID 是：<code>{user_id}</code>")
 
 def do_like(chat_id, message_id, emoji):
     token = os.getenv('TOKEN')
@@ -434,6 +428,7 @@ async def bot_handler(update: Update, context):
                 u.online = True
                 db.session.commit()
                 r = await msg.reply_html(conf.get('msg_checkin_success'))
+            # ⚡️ 使用 safe_int 避免 NoneType 报错
             context.job_queue.run_once(lambda c: c.job.data.delete(), safe_int(conf.get('checkin_del_time'), 30), data=r)
         return
 
@@ -461,6 +456,7 @@ async def bot_handler(update: Update, context):
             markup = None
         if text_resp:
             sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
+            # ⚡️ 使用 safe_int 避免 NoneType 报错
             context.job_queue.run_once(lambda c: c.job.data.delete(), safe_int(conf.get('query_del_time'), 60), data=sent)
 
 async def pagination_callback(update: Update, context):
