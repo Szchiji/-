@@ -7,20 +7,20 @@ import os, jwt, time, json, asyncio, re, requests, math
 from datetime import datetime, timedelta
 
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
-http = requests.Session()
 
 # 全局变量
 global_ptb_app = None
+global_bot_loop = None
 
 # --- Webhook 接收端点 ---
 @core_bp.route('/webhook', methods=['POST'])
 def webhook():
-    """接收 Telegram 推送"""
-    if global_ptb_app is None:
-        return "Bot not initialized", 500
+    if not global_ptb_app:
+        return "Bot Not Ready", 503
     
     try:
         json_data = request.get_json(force=True)
+        # 在新的 Loop 中处理 Update，避免 RuntimeError
         asyncio.run(process_update_safe(json_data))
         return "OK", 200
     except Exception as e:
@@ -29,7 +29,7 @@ def webhook():
 
 async def process_update_safe(data):
     """安全处理 Update"""
-    async with global_ptb_app:
+    async with global_ptb_app: # 上下文管理器自动处理初始化
         update = Update.de_json(data, global_ptb_app.bot)
         await global_ptb_app.process_update(update)
 
@@ -43,13 +43,8 @@ def inject_context():
     if gid: data['current_group'] = BotGroup.query.get(gid)
     return data
 
-def safe_int(val, default=0):
-    """
-    安全转换整数，处理空字符串、None等情况
-    """
-    if val is None: return default
-    if isinstance(val, str) and val.strip() == '': return default
-    try: return int(val)
+def safe_int(val, default=30):
+    try: return int(val) if str(val).strip() else default
     except: return default
 
 def get_group_conf(group):
@@ -145,25 +140,26 @@ def api_save_user():
     d = request.json
     gid = d.get('group_id') or session.get('current_group_id')
     try:
-        # ⚡️ 修复点：使用 safe_int 处理空字符串
-        tg_id = safe_int(d.get('tg_id'))
-        if not tg_id:
-             return jsonify({"status": "err", "msg": "Telegram ID 不能为空"})
-             
+        # ⚡️ 修复：安全处理空字符串
+        tg_id_raw = d.get('tg_id')
+        if not tg_id_raw: return jsonify({"status": "err", "msg": "Telegram ID 不能为空"})
+        tg_id = int(tg_id_raw)
+        
         u = GroupUser.query.filter_by(group_id=gid, tg_id=tg_id).first()
         if not u:
             u = GroupUser(group_id=gid, tg_id=tg_id)
             db.session.add(u)
         u.profile_data = json.dumps(d.get('profile', {}), ensure_ascii=False)
         
-        # ⚡️ 修复点：使用 safe_int 处理空字符串
-        days = safe_int(d.get('add_days', 0))
+        # ⚡️ 修复：如果是空字符串，默认为 0
+        days_raw = d.get('add_days')
+        days = int(days_raw) if days_raw and str(days_raw).strip() else 0
+        
         if days:
             now = datetime.now()
             base = u.expiration_date if (u.expiration_date and u.expiration_date > now) else now
             u.expiration_date = base + timedelta(days=days)
             u.is_banned = False 
-        
         db.session.commit()
         return jsonify({"status": "ok"})
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
@@ -205,13 +201,11 @@ def api_toggle_group():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     group = BotGroup.query.get(request.json.get('id'))
     if group:
-        action = request.json.get('action')
-        if action == 'delete':
-            # ⚡️ 级联删除：先删用户，再删群组
-            GroupUser.query.filter_by(group_id=group.id).delete()
-            db.session.delete(group)
+        if request.json.get('action') == 'delete':
+             GroupUser.query.filter_by(group_id=group.id).delete()
+             db.session.delete(group)
         else:
-            group.is_active = request.json.get('active')
+             group.is_active = request.json.get('active')
         db.session.commit()
     return jsonify({"status": "ok"})
 
@@ -237,18 +231,23 @@ async def run_bot():
     global global_ptb_app
     token = os.getenv('TOKEN')
     
+    # 1. 构建 App
     app_bot = Application.builder().token(token).build()
     
+    # 2. 注册处理器
     app_bot.add_handler(CommandHandler("start", bot_start))
     app_bot.add_handler(CallbackQueryHandler(pagination_callback))
     app_bot.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
     app_bot.add_handler(MessageHandler(filters.ALL, bot_handler))
     
+    # 3. 初始化并启动
     await app_bot.initialize()
     await app_bot.start()
     
+    # 4. 赋值全局变量
     global_ptb_app = app_bot
     
+    # 5. 设置 Webhook
     domain = os.getenv('RAILWAY_PUBLIC_DOMAIN')
     if domain:
         url = f"https://{domain}/core/webhook"
