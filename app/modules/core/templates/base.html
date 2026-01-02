@@ -11,22 +11,16 @@
         body { background-color: var(--bg-color); font-family: 'Segoe UI', Roboto, sans-serif; color: #5a5c69; }
         
         /* 侧边栏 */
-        .sidebar-wrapper { 
-            min-height: 100vh; background: linear-gradient(180deg,#4e73df 10%,#224abe 100%); 
-            width: 224px; position: fixed; left: 0; top: 0; bottom: 0; z-index: 1000; padding-top: 1rem; 
-        }
+        .sidebar-wrapper { min-height: 100vh; background: linear-gradient(180deg,#4e73df 10%,#224abe 100%); width: 224px; position: fixed; left: 0; top: 0; bottom: 0; z-index: 1000; padding-top: 1rem; }
         .sidebar-brand { color: white; text-decoration: none; font-weight: 800; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; padding-bottom: 1.5rem; margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.15); }
         .nav-item .nav-link { color: rgba(255,255,255,.8); padding: 1rem; margin: 0 1rem; border-radius: 0.35rem; display: block; text-decoration: none; font-weight: 600; }
         .nav-item .nav-link:hover { color: white; background: rgba(255,255,255,0.1); }
         .nav-item .nav-link.active { background: white; color: #4e73df; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .nav-item .nav-link i { width: 20px; margin-right: 0.5rem; text-align: center; }
         
-        /* 主内容容器 */
+        /* 主内容 */
         .main-content-wrapper { margin-left: 224px; min-height: 100vh; display: flex; flex-direction: column; transition: margin-left 0.3s; }
-        
-        /* ⚡️ 关键修复：当没有侧边栏时，左边距归零 */
         .main-content-wrapper.no-sidebar { margin-left: 0 !important; }
-        
         .top-bar { height: 70px; background: white; box-shadow: 0 .15rem 1.75rem 0 rgba(58,59,69,.15); display: flex; align-items: center; justify-content: flex-end; padding: 0 2rem; margin-bottom: 1.5rem; }
         .card { border: none; border-radius: 0.75rem; box-shadow: 0 .15rem 1.75rem 0 rgba(58,59,69,.15); }
         
@@ -38,7 +32,18 @@
 </head>
 <body>
 
-<!-- 判断是否显示侧边栏：只有在群组内 且 不是选择页 时才显示 -->
+<!-- 气泡提示容器 (右上角) -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1100;">
+  <div id="liveToast" class="toast align-items-center border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="d-flex">
+      <div class="toast-body fw-bold" id="toastMessage">
+        <!-- 消息内容 -->
+      </div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+  </div>
+</div>
+
 {% set show_sidebar = (current_group and page != 'select_group') %}
 
 {% if show_sidebar %}
@@ -53,7 +58,6 @@
     </div>
 {% endif %}
 
-<!-- 主内容区：如果没有侧边栏，自动添加 no-sidebar 类 -->
 <div class="main-content-wrapper {{ '' if show_sidebar else 'no-sidebar' }}">
     {% if show_sidebar %}
     <div class="top-bar">
@@ -61,7 +65,6 @@
         <a href="/core/logout" class="btn btn-sm btn-light text-danger shadow-sm"><i class="fas fa-sign-out-alt"></i></a>
     </div>
     {% else %}
-    <!-- 全屏页面的顶部导航 -->
     <nav class="navbar navbar-light bg-white shadow-sm mb-4 px-4">
         <a class="navbar-brand" href="#"><i class="fa-solid fa-robot me-2"></i>Bot Manager</a>
         {% if session.get('logged_in') %}
@@ -78,13 +81,35 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
+    // 显示气泡通知
+    function showToast(msg, type='success') {
+        const toastEl = document.getElementById('liveToast');
+        const toastBody = document.getElementById('toastMessage');
+        const bsToast = new bootstrap.Toast(toastEl, { delay: 3000 });
+        
+        toastBody.innerText = msg;
+        if (type === 'success') {
+            toastEl.className = "toast align-items-center text-white bg-success border-0 shadow-lg";
+        } else {
+            toastEl.className = "toast align-items-center text-white bg-danger border-0 shadow-lg";
+        }
+        bsToast.show();
+    }
+
     async function postApi(url, data) {
         try {
             const res = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
             const json = await res.json();
-            if (json.status === 'ok') { alert('✅ 操作成功'); location.reload(); } 
-            else { alert('❌ 失败: ' + (json.msg || '未知错误')); }
-        } catch (e) { alert('❌ 网络错误'); }
+            if (json.status === 'ok') { 
+                showToast(json.msg || '✅ 操作成功', 'success');
+                setTimeout(() => location.reload(), 1000); // 延迟1秒刷新，让用户看到提示
+            } 
+            else { 
+                showToast(json.msg || '❌ 操作失败', 'error'); 
+            }
+        } catch (e) { 
+            showToast('❌ 网络错误', 'error'); 
+        }
     }
 </script>
 {% block scripts %}{% endblock %}
