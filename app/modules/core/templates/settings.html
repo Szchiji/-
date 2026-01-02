@@ -1,316 +1,64 @@
-{% extends "layout_admin.html" %}
-
+{% extends "base.html" %}
 {% block content %}
-<style>
-    /* 页面专用样式 */
-    .section-title { font-size: 0.8rem; font-weight: 700; color: #6c757d; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e9ecef; }
-    .cursor-pointer { cursor: pointer; user-select: none; }
-    .cursor-pointer:hover { opacity: 0.8; transform: translateY(-1px); }
-    #editor { 
-        min-height: 300px; 
-        max-height: 500px; 
-        overflow-y: auto; 
-        font-family: 'Menlo', 'Monaco', 'Courier New', monospace; 
-        font-size: 14px; 
-        line-height: 1.6;
-        white-space: pre-wrap;
-        outline: none;
-    }
-    #editor:focus { background-color: #fcfcfc; }
-    .msg-bubble { background-color: #fff; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; }
-</style>
+<h2>功能配置</h2>
+<button class="btn btn-primary mb-3" onclick="save()">保存所有</button>
 
-<div class="container-fluid p-0">
-    <!-- 顶部标题栏 -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h4 class="fw-bold text-dark mb-1">
-                <i class="fa-solid fa-sliders text-primary me-2"></i>功能配置
-            </h4>
-            <small class="text-muted">当前群组: {{ group.title }}</small>
-        </div>
-        <button class="btn btn-primary px-4 shadow-sm" onclick="saveSettings()">
-            <i class="fa-solid fa-save me-2"></i>保存所有配置
-        </button>
+<div class="row">
+    <div class="col-md-6">
+        <h4>参数</h4>
+        <div class="form-group"><label>开启打卡</label><input type="checkbox" id="checkin_open" {{ 'checked' if conf.checkin_open }}></div>
+        <div class="form-group"><label>打卡指令</label><input class="form-control" id="checkin_cmd" value="{{ conf.checkin_cmd }}"></div>
+        <div class="form-group"><label>开启查询</label><input type="checkbox" id="query_open" {{ 'checked' if conf.query_open }}></div>
+        <div class="form-group"><label>查询指令</label><input class="form-control" id="query_cmd" value="{{ conf.query_cmd }}"></div>
+        <div class="form-group"><label>关键词搜索</label><input type="checkbox" id="query_filter_open" {{ 'checked' if conf.query_filter_open }}></div>
+        <div class="form-group"><label>自动点赞</label><input type="checkbox" id="auto_like" {{ 'checked' if conf.auto_like }}></div>
+        <div class="form-group"><label>点赞表情</label><input class="form-control" id="like_emoji" value="{{ conf.like_emoji }}"></div>
+        <div class="form-group"><label>过期禁言</label><input type="checkbox" id="auto_mute_expired" {{ 'checked' if conf.auto_mute_expired }}></div>
+        <div class="form-group"><label>推送频道ID</label><input class="form-control" id="push_channel_id" value="{{ conf.push_channel_id }}"></div>
     </div>
-
-    <div class="row g-4">
-        <!-- 左侧：核心参数配置 -->
-        <div class="col-lg-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-header bg-white py-3 fw-bold border-bottom">
-                    <i class="fa-solid fa-toggle-on text-success me-2"></i>交互参数设置
-                </div>
-                <div class="card-body">
-                    
-                    <!-- 1. 打卡模块 -->
-                    <div class="mb-4">
-                        <div class="section-title text-primary">打卡功能</div>
-                        <div class="d-flex justify-content-between align-items-center mb-2 bg-light p-2 rounded">
-                            <label class="form-check-label fw-bold mb-0" for="checkin_open">开启打卡</label>
-                            <div class="form-check form-switch m-0">
-                                <input class="form-check-input" type="checkbox" id="checkin_open" {{ 'checked' if conf.checkin_open }}>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label small text-muted">触发指令 (逗号分隔)</label>
-                            <input id="checkin_cmd" class="form-control form-control-sm" value="{{ conf.checkin_cmd }}" placeholder="例如: 打卡, 签到">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label small text-muted">成功提示自动删除 (秒)</label>
-                            <div class="input-group input-group-sm">
-                                <span class="input-group-text"><i class="fa-regular fa-clock"></i></span>
-                                <input type="number" id="checkin_del_time" class="form-control" value="{{ conf.checkin_del_time }}">
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 2. 查询模块 -->
-                    <div class="mb-4">
-                        <div class="section-title text-info">查询功能</div>
-                        <div class="d-flex justify-content-between align-items-center mb-2 bg-light p-2 rounded">
-                            <label class="fw-bold small mb-0">指令查询 (如"查询")</label>
-                            <div class="form-check form-switch m-0">
-                                <input class="form-check-input" type="checkbox" id="query_open" {{ 'checked' if conf.query_open }}>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <input id="query_cmd" class="form-control form-control-sm" value="{{ conf.query_cmd }}" placeholder="指令关键词">
-                        </div>
-
-                        <div class="d-flex justify-content-between align-items-center mb-2 bg-light p-2 rounded">
-                            <label class="fw-bold small mb-0">关键词模糊搜索</label>
-                            <div class="form-check form-switch m-0">
-                                <input class="form-check-input" type="checkbox" id="query_filter_open" {{ 'checked' if conf.query_filter_open }}>
-                            </div>
-                        </div>
-                        <div class="form-text small mb-3">开启后，用户直接发送 "深圳" 即可搜到包含深圳的用户。</div>
-
-                        <div class="row g-2">
-                            <div class="col-6">
-                                <label class="small text-muted">每页显示行数</label>
-                                <input type="number" id="page_size" class="form-control form-control-sm" value="{{ conf.page_size }}">
-                            </div>
-                            <div class="col-6">
-                                <label class="small text-muted">列表自动删除(秒)</label>
-                                <input type="number" id="query_del_time" class="form-control form-control-sm" value="{{ conf.query_del_time }}">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 3. 其他设置 -->
-                    <div class="mb-3">
-                        <div class="section-title text-warning">其他增强</div>
-                        
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <label class="small fw-bold mb-0">认证用户发言自动点赞</label>
-                            <div class="form-check form-switch m-0">
-                                <input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if conf.auto_like }}>
-                            </div>
-                        </div>
-                        <div class="input-group input-group-sm mb-3">
-                            <span class="input-group-text">表情</span>
-                            <input id="like_emoji" class="form-control" value="{{ conf.like_emoji }}" placeholder="❤️">
-                        </div>
-                        
-                        <div class="d-flex justify-content-between align-items-center mb-3 p-2 border border-danger rounded bg-danger bg-opacity-10">
-                            <label class="small fw-bold text-danger mb-0">过期自动禁言</label>
-                            <div class="form-check form-switch m-0">
-                                <input class="form-check-input" type="checkbox" id="auto_mute_expired" {{ 'checked' if conf.auto_mute_expired }}>
-                            </div>
-                        </div>
-
-                        <div class="mb-0">
-                            <label class="small fw-bold text-muted">推送频道 ID (可选)</label>
-                            <input id="push_channel_id" class="form-control form-control-sm" value="{{ conf.push_channel_id or '' }}" placeholder="-100xxxxxxx">
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 右侧：富文本编辑器与按钮 -->
-        <div class="col-lg-8">
-            <!-- 文案编辑器 -->
-            <div class="card border-0 shadow-sm mb-4 h-100">
-                <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center border-bottom">
-                    <div class="d-flex align-items-center">
-                        <i class="fa-solid fa-pen-nib text-secondary me-2"></i>
-                        <select class="form-select form-select-sm fw-bold border-0 bg-light" id="msgSelector" onchange="loadMsg()" style="width: 200px;">
-                            <optgroup label="列表与显示">
-                                <option value="template">📋 列表单行模板</option>
-                                <option value="msg_query_header">📝 普通查询抬头</option>
-                                <option value="msg_filter_header">🔍 筛选查询抬头</option>
-                            </optgroup>
-                            <optgroup label="系统提示">
-                                <option value="msg_checkin_success">✅ 打卡成功消息</option>
-                                <option value="msg_not_registered">⚠️ 未认证提示</option>
-                                <option value="msg_repeat_checkin">🔄 重复打卡提示</option>
-                                <option value="msg_expired_ban">⛔️ 过期禁言提示</option>
-                            </optgroup>
-                            <optgroup label="推送">
-                                <option value="push_template">📢 频道推送模板</option>
-                            </optgroup>
-                        </select>
-                    </div>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="saveTmp()">
-                        <i class="fa-solid fa-bookmark me-1"></i>暂存修改
-                    </button>
-                </div>
-                
-                <div class="card-body p-0 d-flex flex-column msg-bubble mx-3 my-3">
-                    <!-- 快捷插入工具栏 -->
-                    <div class="bg-light p-2 border-bottom d-flex gap-2 flex-wrap align-items-center">
-                        <small class="text-muted fw-bold me-2">插入变量:</small>
-                        
-                        <span class="badge bg-white text-dark border cursor-pointer shadow-sm" onclick="insert('{onlineEmoji}')">🟢在线状态</span>
-                        <span class="badge bg-white text-dark border cursor-pointer shadow-sm" onclick="insert('{序号}')">#️⃣序号</span>
-                        <span class="badge bg-white text-dark border cursor-pointer shadow-sm" onclick="insert('{tg_id}')">🆔用户ID</span>
-                        
-                        <div class="vr mx-1"></div>
-                        <!-- 动态字段 -->
-                        {% for f in fields %}
-                        <span class="badge bg-primary bg-opacity-10 text-primary border border-primary cursor-pointer" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>
-                        {% endfor %}
-                        
-                        <div class="vr mx-1"></div>
-                        <!-- 格式化工具 -->
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-light border" onclick="cmd('bold')" title="加粗"><b>B</b></button>
-                            <button class="btn btn-light border" onclick="link()" title="链接"><i class="fa-solid fa-link"></i></button>
-                            <button class="btn btn-light border" onclick="cmd('removeFormat')" title="清除格式"><i class="fa-solid fa-eraser"></i></button>
-                        </div>
-                    </div>
-                    
-                    <!-- 编辑区域 -->
-                    <div id="editor" contenteditable="true" class="p-3 flex-grow-1"></div>
-                </div>
-                <div class="card-footer bg-white text-muted small border-top-0">
-                    <i class="fa-solid fa-circle-info me-1"></i> 支持 HTML 标签。切换下拉菜单前请点击"暂存修改"。
-                </div>
-            </div>
-
-            <!-- 自定义按钮配置 -->
-            <div class="card border-0 shadow-sm mt-4">
-                <div class="card-header bg-white py-3 fw-bold d-flex justify-content-between align-items-center">
-                    <span><i class="fa-solid fa-keyboard text-secondary me-2"></i>自定义按钮 (查询结果底部)</span>
-                    <button class="btn btn-sm btn-outline-primary rounded-pill" onclick="addBtn()">
-                        <i class="fa-solid fa-plus me-1"></i>添加按钮
-                    </button>
-                </div>
-                <div class="card-body bg-light">
-                    <div id="btnContainer" class="row g-3"></div>
-                    <textarea id="custom_buttons" class="form-control d-none">{{ conf.custom_buttons }}</textarea>
-                </div>
-            </div>
-        </div>
+    <div class="col-md-6">
+        <h4>文案模板 (HTML)</h4>
+        <select class="form-control mb-2" id="sel" onchange="loadMsg()">
+            <option value="template">列表行模板</option>
+            <option value="msg_checkin_success">打卡成功</option>
+            <option value="msg_not_registered">未认证</option>
+            <option value="msg_repeat_checkin">重复打卡</option>
+            <option value="push_template">推送模板</option>
+        </select>
+        <textarea class="form-control mb-2" id="editor" rows="10"></textarea>
+        <button class="btn btn-secondary btn-sm" onclick="saveTmp()">暂存文案</button>
+        
+        <h4 class="mt-4">自定义按钮</h4>
+        <div id="btns"></div>
+        <button class="btn btn-sm btn-info" onclick="addBtn()">+ 按钮</button>
     </div>
 </div>
 
 <script>
-    // 初始化数据 (防止后端传空值报错)
-    let msgs = {
-        template: `{{ conf.template|default('')|safe }}`,
-        push_template: `{{ conf.push_template|default('')|safe }}`,
-        msg_checkin_success: `{{ conf.msg_checkin_success|default('✅ 打卡成功')|safe }}`,
-        msg_not_registered: `{{ conf.msg_not_registered|default('⚠️ 您未认证')|safe }}`,
-        msg_repeat_checkin: `{{ conf.msg_repeat_checkin|default('🔄 今日已打卡')|safe }}`,
-        msg_query_header: `{{ conf.msg_query_header|default('📝 查询结果')|safe }}`,
-        msg_filter_header: `{{ conf.msg_filter_header|default('🔍 筛选结果')|safe }}`,
-        msg_expired_ban: `{{ conf.msg_expired_ban|default('⛔️ 您的服务已过期')|safe }}`
+let msgs={template:`{{ conf.template|safe }}`, push_template:`{{ conf.push_template|safe }}`, msg_checkin_success:`{{ conf.msg_checkin_success|safe }}`, msg_not_registered:`{{ conf.msg_not_registered|safe }}`, msg_repeat_checkin:`{{ conf.msg_repeat_checkin|safe }}`};
+let btns=[]; try{btns=JSON.parse(`{{ conf.custom_buttons|safe }}`)||[];}catch(e){}
+
+function renderBtns(){
+    $('#btns').html(btns.map((b,i)=>`<div class="input-group mb-2"><input class="form-control" placeholder="文" value="${b.text}" onchange="btns[${i}].text=this.value"><input class="form-control" placeholder="链" value="${b.url}" onchange="btns[${i}].url=this.value"><div class="input-group-append"><button class="btn btn-danger" onclick="btns.splice(${i},1);renderBtns()">X</button></div></div>`).join(''));
+}
+function addBtn(){ btns.push({text:'',url:''}); renderBtns(); }
+function loadMsg(){ $('#editor').val(msgs[$('#sel').val()]||''); }
+function saveTmp(){ msgs[$('#sel').val()]=$('#editor').val(); alert('已暂存'); }
+
+async function save(){
+    saveTmp();
+    let d={
+        group_id:{{ group.id }},
+        config:{
+            ...msgs,
+            checkin_open:$('#checkin_open').is(':checked'), checkin_cmd:$('#checkin_cmd').val(),
+            query_open:$('#query_open').is(':checked'), query_cmd:$('#query_cmd').val(), query_filter_open:$('#query_filter_open').is(':checked'),
+            auto_like:$('#auto_like').is(':checked'), like_emoji:$('#like_emoji').val(), auto_mute_expired:$('#auto_mute_expired').is(':checked'),
+            push_channel_id:$('#push_channel_id').val(), custom_buttons:JSON.stringify(btns)
+        }
     };
-    
-    const currentGroupId = {{ group.id }};
-    let btnData = [];
-    try { 
-        btnData = JSON.parse(document.getElementById('custom_buttons').value || '[]'); 
-    } catch(e) { btnData = []; }
-
-    // 初始化运行
-    document.addEventListener('DOMContentLoaded', () => { 
-        loadMsg(); 
-        renderBtns(); 
-    });
-
-    // --- 按钮管理 ---
-    function renderBtns() {
-        const con = document.getElementById('btnContainer');
-        con.innerHTML = '';
-        btnData.forEach((b, i) => {
-            con.innerHTML += `
-                <div class="col-md-6">
-                    <div class="card border p-2 shadow-sm">
-                        <div class="input-group input-group-sm mb-2">
-                            <span class="input-group-text bg-white">文字</span>
-                            <input type="text" class="form-control" value="${b.text}" onchange="updateBtn(${i}, 'text', this.value)">
-                        </div>
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-white">链接</span>
-                            <input type="text" class="form-control" value="${b.url}" onchange="updateBtn(${i}, 'url', this.value)">
-                            <button class="btn btn-danger" onclick="delBtn(${i})"><i class="fa-solid fa-trash"></i></button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        });
-        if(btnData.length === 0) con.innerHTML = '<div class="text-center text-muted w-100 py-3 small">暂无自定义按钮</div>';
-    }
-    
-    function addBtn() { btnData.push({text:'', url:''}); renderBtns(); }
-    function delBtn(i) { btnData.splice(i, 1); renderBtns(); }
-    function updateBtn(i, key, val) { btnData[i][key] = val; }
-
-    // --- 文案编辑器 ---
-    function loadMsg() { 
-        const key = document.getElementById('msgSelector').value;
-        document.getElementById('editor').innerHTML = msgs[key] || ''; 
-    }
-    
-    function saveTmp() { 
-        let content = document.getElementById('editor').innerHTML;
-        content = content.replace(/&nbsp;/g, ' '); 
-        msgs[document.getElementById('msgSelector').value] = content;
-        
-        // 调用 base.html 的气泡
-        showToast('文案已暂存', 'success');
-    }
-    
-    function cmd(c,v){ document.getElementById('editor').focus(); document.execCommand(c,false,v); }
-    
-    function insert(text) {
-        document.getElementById('editor').focus();
-        document.execCommand('insertText', false, text);
-    }
-    
-    function link(){ let u=prompt('输入链接地址 (URL):'); if(u) cmd('createLink',u); }
-    
-    // --- 保存总配置 ---
-    async function saveSettings() {
-        saveTmp(); // 自动暂存当前编辑框
-        
-        const d = {
-            group_id: currentGroupId,
-            config: {
-                ...msgs,
-                checkin_open: document.getElementById('checkin_open').checked,
-                checkin_cmd: document.getElementById('checkin_cmd').value,
-                checkin_del_time: document.getElementById('checkin_del_time').value, 
-                query_open: document.getElementById('query_open').checked,
-                query_cmd: document.getElementById('query_cmd').value,
-                query_filter_open: document.getElementById('query_filter_open').checked,
-                query_del_time: document.getElementById('query_del_time').value,
-                page_size: document.getElementById('page_size').value,
-                auto_like: document.getElementById('auto_like').checked,
-                like_emoji: document.getElementById('like_emoji').value,
-                auto_mute_expired: document.getElementById('auto_mute_expired').checked,
-                push_channel_id: document.getElementById('push_channel_id').value,
-                custom_buttons: JSON.stringify(btnData.filter(b => b.text && b.url)), 
-                online_emoji: "{{ conf.online_emoji }}", 
-                offline_emoji: "{{ conf.offline_emoji }}"
-            }
-        };
-        
-        await postApi('/core/api/save_settings', d);
-    }
+    await postApi('/core/api/save_settings', d);
+}
+$(()=>{loadMsg();renderBtns();});
 </script>
 {% endblock %}
