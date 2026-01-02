@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+
 {% block body %}
+<!-- ⚠️ 只有 base.html 干净了，这里的内容才能全屏显示 -->
 <div class="fullscreen-container">
     <nav class="navbar-simple">
         <span class="fw-bold text-primary fs-5"><i class="fa-solid fa-robot me-2"></i>Bot Manager</span>
@@ -13,7 +15,9 @@
                 {% for g in groups %}
                 <div class="list-group-item p-4 d-flex align-items-center justify-content-between border-bottom">
                     <a href="/core/group/{{ g.id }}/dashboard" class="d-flex align-items-center text-decoration-none text-dark flex-grow-1">
-                        <div class="bg-light rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 48px; height: 48px;"><i class="fa-solid fa-users text-primary"></i></div>
+                        <div class="bg-light rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 48px; height: 48px;">
+                            <i class="fa-solid fa-users text-primary"></i>
+                        </div>
                         <div><h5 class="mb-0 fw-bold">{{ g.title }}</h5><small class="text-muted">ID: {{ g.chat_id }}</small></div>
                     </a>
                     <div class="d-flex align-items-center gap-2">
