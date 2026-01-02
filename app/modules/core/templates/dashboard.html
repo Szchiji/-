@@ -1,23 +1,21 @@
-{% extends "layout_admin.html" %}
+{% extends "base.html" %}
 {% block content %}
-<div class="row g-4 mb-4">
-    <div class="col-md-6 col-lg-4">
-        <div class="card h-100 border-0 shadow-sm border-start border-4 border-primary p-3">
-            <div class="d-flex align-items-center"><div class="flex-grow-1"><div class="text-muted small fw-bold text-uppercase mb-1">总认证用户</div><div class="h3 mb-0 fw-bold text-dark">{{ stats.users }}</div></div><i class="fa-solid fa-users fa-2x text-gray-300 opacity-25"></i></div>
+<h2>数据概览</h2>
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card text-white bg-primary mb-3">
+            <div class="card-header">总用户</div>
+            <div class="card-body">
+                <h1 class="card-title">{{ stats.users }}</h1>
+            </div>
         </div>
     </div>
-    <div class="col-md-6 col-lg-4">
-        <div class="card h-100 border-0 shadow-sm border-start border-4 border-success p-3">
-            <div class="d-flex align-items-center"><div class="flex-grow-1"><div class="text-muted small fw-bold text-uppercase mb-1">今日活跃</div><div class="h3 mb-0 fw-bold text-dark">{{ stats.online }}</div></div><i class="fa-solid fa-clock fa-2x text-gray-300 opacity-25"></i></div>
-        </div>
-    </div>
-</div>
-<div class="card shadow mb-4">
-    <div class="card-header py-3 fw-bold text-primary">快捷操作</div>
-    <div class="card-body">
-        <div class="row g-3">
-            <div class="col-md-4"><a href="/core/group/{{ current_group.id }}/users" class="btn btn-outline-primary w-100 py-3 fw-bold"><i class="fa-solid fa-plus-circle me-2"></i> 添加新用户</a></div>
-            <div class="col-md-4"><a href="/core/group/{{ current_group.id }}/settings" class="btn btn-outline-secondary w-100 py-3 fw-bold"><i class="fa-solid fa-sliders me-2"></i> 修改功能配置</a></div>
+    <div class="col-md-6">
+        <div class="card text-white bg-success mb-3">
+            <div class="card-header">今日打卡</div>
+            <div class="card-body">
+                <h1 class="card-title">{{ stats.online }}</h1>
+            </div>
         </div>
     </div>
 </div>
