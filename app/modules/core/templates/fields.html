@@ -1,219 +1,63 @@
 {% extends "layout_admin.html" %}
 
 {% block content %}
-<!-- 气泡提示容器 -->
-<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1055;">
-    <div id="liveToast" class="toast align-items-center text-white border-0" role="alert" aria-live="assertive" aria-atomic="true">
-        <div class="d-flex">
-            <div class="toast-body fw-bold" id="toastMsg"></div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-        </div>
+<div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center bg-white">
+        <h6 class="m-0 font-weight-bold text-primary">字段配置</h6>
+        <button class="btn btn-primary btn-sm" onclick="saveFields()">
+            <i class="fa-solid fa-save me-1"></i> 保存更改
+        </button>
+    </div>
+    <div class="card-body">
+        <div id="fields-container"></div>
+        <button class="btn btn-light w-100 mt-3 border-dashed py-3 text-primary fw-bold" onclick="addField()" style="border: 2px dashed #e3e6f0;">
+            <i class="fa-solid fa-plus me-2"></i> 添加新字段
+        </button>
     </div>
 </div>
-
-<div class="row justify-content-center">
-    <div class="col-lg-10">
-        <!-- 顶部操作栏 -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h4 class="fw-bold text-dark mb-1">
-                    <i class="fa-solid fa-list-check text-primary me-2"></i>资料字段配置
-                </h4>
-                <p class="text-muted small mb-0">定义用户需要录入的资料项，如：昵称、地区、年龄等。</p>
-            </div>
-            <button class="btn btn-primary px-4 shadow-sm fw-bold" id="saveBtn" onclick="saveFields()">
-                <i class="fa-solid fa-save me-2"></i> 保存所有配置
-            </button>
-        </div>
-
-        <!-- 字段列表容器 -->
-        <div id="fields-container" class="mb-4">
-            <!-- JS 将在这里渲染字段卡片 -->
-        </div>
-
-        <!-- 底部添加按钮 -->
-        <div class="card border-dashed bg-light text-center cursor-pointer hover-shadow" onclick="addField()" style="border: 2px dashed #cbd5e1; transition: all 0.2s;">
-            <div class="card-body py-4">
-                <i class="fa-solid fa-circle-plus fa-2x text-primary mb-2 opacity-75"></i>
-                <h6 class="fw-bold text-primary m-0">添加新字段</h6>
-            </div>
-        </div>
-    </div>
-</div>
-
-<style>
-    .hover-shadow:hover { background-color: #f1f5f9 !important; border-color: #94a3b8 !important; transform: translateY(-2px); }
-    .field-card { transition: all 0.2s; border-left: 4px solid #3b82f6; }
-    .field-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-    .animate-in { animation: fadeIn 0.3s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-</style>
 
 <script>
-    // 初始化数据 (容错处理)
-    let currentFields = {{ fields_json | safe }};
-    if (!Array.isArray(currentFields)) currentFields = [];
+    let currentFields = {{ fields_json | safe }} || [];
+    if(!Array.isArray(currentFields)) currentFields = [];
 
-    // 渲染函数
     function render() {
-        const container = document.getElementById('fields-container');
-        
-        if (currentFields.length === 0) {
-            container.innerHTML = `
-                <div class="text-center py-5">
-                    <div class="bg-light rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
-                        <i class="fa-solid fa-clipboard-list fa-2x text-muted opacity-50"></i>
-                    </div>
-                    <h5 class="text-muted">暂无字段</h5>
-                    <p class="text-muted small">点击下方按钮添加第一个资料字段</p>
-                </div>`;
-            return;
-        }
-
         let html = '';
         currentFields.forEach((f, idx) => {
             html += `
-            <div class="card field-card border-0 shadow-sm mb-3 animate-in">
-                <div class="card-body p-4">
-                    <div class="d-flex justify-content-between align-items-start mb-3">
-                        <span class="badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill fw-bold">
-                            字段 #${idx + 1}
-                        </span>
-                        <button class="btn btn-outline-danger btn-sm border-0 rounded-circle" onclick="removeField(${idx})" title="删除此字段">
-                            <i class="fa-solid fa-trash-can"></i>
-                        </button>
-                    </div>
-                    
-                    <div class="row g-3">
-                        <!-- 1. 字段键名 (Key) -->
-                        <div class="col-md-3">
-                            <label class="form-label small fw-bold text-muted text-uppercase">
-                                <i class="fa-solid fa-key me-1"></i> 数据库键名 (Key)
-                            </label>
-                            <input type="text" class="form-control bg-light font-monospace" 
-                                   value="${f.key || ''}" 
-                                   onchange="updateField(${idx}, 'key', this.value)" 
-                                   placeholder="例如: age">
-                            <div class="form-text small" style="font-size: 11px;">英文，不可重复</div>
-                        </div>
-
-                        <!-- 2. 显示名称 (Label) -->
-                        <div class="col-md-3">
-                            <label class="form-label small fw-bold text-muted text-uppercase">
-                                <i class="fa-solid fa-tag me-1"></i> 显示名称 (Label)
-                            </label>
-                            <input type="text" class="form-control fw-bold" 
-                                   value="${f.label || ''}" 
-                                   onchange="updateField(${idx}, 'label', this.value)" 
-                                   placeholder="例如: 年龄">
-                        </div>
-
-                        <!-- 3. 类型选择 -->
-                        <div class="col-md-2">
-                            <label class="form-label small fw-bold text-muted text-uppercase">
-                                <i class="fa-solid fa-shapes me-1"></i> 输入类型
-                            </label>
-                            <select class="form-select" onchange="updateField(${idx}, 'type', this.value)">
-                                <option value="text" ${f.type=='text'?'selected':''}>📝 纯文本</option>
-                                <option value="select" ${f.type=='select'?'selected':''}>🔻 下拉菜单</option>
-                            </select>
-                        </div>
-
-                        <!-- 4. 选项配置 (仅下拉有效) -->
-                        <div class="col-md-4">
-                            <label class="form-label small fw-bold text-muted text-uppercase">
-                                <i class="fa-solid fa-list-ul me-1"></i> 选项列表
-                            </label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" 
-                                       value="${f.options||''}" 
-                                       onchange="updateField(${idx}, 'options', this.value)" 
-                                       ${f.type!='select'?'disabled style="background-color:#f1f5f9;"':''} 
-                                       placeholder="选项A, 选项B, 选项C">
-                            </div>
-                            <div class="form-text small" style="font-size: 11px;">
-                                ${f.type=='select' ? '使用逗号 "," 分隔多个选项' : '文本类型无需配置此项'}
-                            </div>
-                        </div>
-                    </div>
+            <div class="row g-2 align-items-center mb-3 pb-3 border-bottom field-item">
+                <div class="col-md-3">
+                    <label class="small text-muted fw-bold">字段Key (英文)</label>
+                    <input type="text" class="form-control bg-light" value="${f.key||''}" onchange="upd(${idx},'key',this.value)" placeholder="如: age">
+                </div>
+                <div class="col-md-3">
+                    <label class="small text-muted fw-bold">显示名称</label>
+                    <input type="text" class="form-control fw-bold" value="${f.label||''}" onchange="upd(${idx},'label',this.value)" placeholder="如: 年龄">
+                </div>
+                <div class="col-md-2">
+                    <label class="small text-muted fw-bold">类型</label>
+                    <select class="form-select" onchange="upd(${idx},'type',this.value)">
+                        <option value="text" ${f.type=='text'?'selected':''}>文本</option>
+                        <option value="select" ${f.type=='select'?'selected':''}>下拉菜单</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="small text-muted fw-bold">选项 (逗号分隔)</label>
+                    <input type="text" class="form-control" value="${f.options||''}" onchange="upd(${idx},'options',this.value)" ${f.type!='select'?'disabled':''} placeholder="A,B,C">
+                </div>
+                <div class="col-md-1 text-center pt-4">
+                    <button class="btn btn-link text-danger" onclick="rem(${idx})"><i class="fa-solid fa-trash"></i></button>
                 </div>
             </div>`;
         });
-        container.innerHTML = html;
+        if(currentFields.length===0) html='<div class="text-center text-muted py-4">暂无字段</div>';
+        $('#fields-container').html(html);
     }
-
-    // --- 数据操作 ---
-    function addField() {
-        currentFields.push({key: '', label: '', type: 'text', options: ''});
-        render();
-        // 滚动到底部
-        setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 100);
-    }
-
-    function removeField(idx) {
-        if(confirm('确定要删除这个字段吗？删除后，已录入的用户数据中对应的该项可能会无法显示。')) {
-            currentFields.splice(idx, 1);
-            render();
-            showToast('已移除字段，请记得点击保存', 'warning');
-        }
-    }
-
-    function updateField(idx, key, val) {
-        currentFields[idx][key] = val;
-        // 如果改变了类型，重新渲染以更新“选项”输入框的禁用状态
-        if(key === 'type') render();
-    }
-
-    // --- 提交保存 ---
-    async function saveFields() {
-        const btn = document.getElementById('saveBtn');
-        const originalText = btn.innerHTML;
-        
-        // Loading 状态
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> 保存中...';
-        
-        try {
-            const res = await fetch('/core/api/save_fields', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({fields: currentFields})
-            });
-            const json = await res.json();
-            
-            if (json.status === 'ok') {
-                showToast('✅ 配置已成功保存！');
-            } else {
-                showToast('❌ 保存失败: ' + (json.msg || '未知错误'), 'error');
-            }
-        } catch (e) {
-            showToast('❌ 网络请求错误', 'error');
-        } finally {
-            // 恢复按钮
-            setTimeout(() => {
-                btn.disabled = false;
-                btn.innerHTML = originalText;
-            }, 500);
-        }
-    }
-
-    // --- 气泡提示工具 ---
-    function showToast(msg, type='success') {
-        const t = document.getElementById('liveToast');
-        const b = document.getElementById('toastMsg');
-        
-        t.classList.remove('bg-success', 'bg-danger', 'bg-warning', 'text-dark', 'text-white');
-        
-        if (type === 'success') { t.classList.add('bg-success', 'text-white'); }
-        else if (type === 'error') { t.classList.add('bg-danger', 'text-white'); }
-        else if (type === 'warning') { t.classList.add('bg-warning', 'text-dark'); }
-        
-        b.innerText = msg;
-        const toast = new bootstrap.Toast(t);
-        toast.show();
-    }
-
-    // 页面加载完毕后渲染
-    document.addEventListener('DOMContentLoaded', render);
+    
+    function addField() { currentFields.push({key:'',label:'',type:'text',options:''}); render(); }
+    function rem(i) { currentFields.splice(i,1); render(); }
+    function upd(i,k,v) { currentFields[i][k]=v; if(k==='type') render(); }
+    async function saveFields() { await postApi('/core/api/save_fields', {fields: currentFields}); }
+    
+    $(document).ready(render);
 </script>
 {% endblock %}
