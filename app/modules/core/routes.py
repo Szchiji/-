@@ -43,7 +43,7 @@ def get_group_fields(group):
         except: pass
     return DEFAULT_FIELDS
 
-# --- Web Routes ---
+# --- Web Routes (保持不变) ---
 @core_bp.route('/')
 def index(): return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
 
@@ -88,7 +88,7 @@ def page_settings(gid):
     fields = get_group_fields(group)
     return render_template('settings.html', page='settings', group=group, conf=conf, fields=fields)
 
-# --- APIs ---
+# --- APIs (保持不变) ---
 @core_bp.route('/api/save_settings', methods=['POST'])
 def api_save_settings():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
@@ -193,48 +193,45 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 📡 Webhook 路由
+# 📡 Webhook 路由 (修复版)
 # =======================
 
 @core_bp.route('/webhook', methods=['POST'])
 def telegram_webhook():
-    """
-    接收 Telegram 推送的消息
-    """
     if ptb_app is None:
         return "Bot not initialized", 500
     
-    # 接收 JSON 数据
     update_json = request.get_json(force=True)
-    # 转换为 Telegram 对象
-    update = Update.de_json(update_json, ptb_app.bot)
     
-    # 在同步 Flask 中运行异步 Bot 逻辑
+    # ⚡️ 修复点：使用 asyncio.run() 自动管理 Event Loop
     try:
-        # 使用 asyncio.run 可能会冲突，因为 Application 内部有 event loop
-        # 我们创建一个新的 loop 专门处理这个请求
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(ptb_app.process_update(update))
-        loop.close()
+        asyncio.run(process_update_safe(update_json))
     except Exception as e:
         print(f"❌ Webhook Error: {e}")
-        return "Error", 500
+        # 这里返回 200 很重要，否则 Telegram 会一直重试导致刷屏
+        return "Error", 200
         
     return "OK"
 
+async def process_update_safe(data):
+    """
+    在一个全新的 Loop 中处理 update，并在结束后正确关闭
+    """
+    # 必须每次重新初始化 Update 对象，因为它是绑定到 Bot 实例的
+    async with ptb_app:
+        update = Update.de_json(data, ptb_app.bot)
+        await ptb_app.process_update(update)
+
 # =======================
-# 🤖 机器人初始化与逻辑
+# 🤖 机器人初始化
 # =======================
 
 async def init_webhook_bot(webhook_domain):
-    """
-    初始化机器人并设置 Webhook
-    """
     global ptb_app
     token = os.getenv('TOKEN')
-    
     print("🤖 正在构建机器人应用...", flush=True)
+    
+    # 构建应用
     ptb_app = Application.builder().token(token).build()
     
     # 注册处理器
@@ -243,10 +240,10 @@ async def init_webhook_bot(webhook_domain):
     ptb_app.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
     ptb_app.add_handler(MessageHandler(filters.ALL, bot_handler))
     
-    # 初始化应用
+    # 初始化
     await ptb_app.initialize()
     await ptb_app.start()
-    
+
     # 设置 Webhook
     webhook_url = f"https://{webhook_domain}/core/webhook"
     print(f"🔗 正在设置 Webhook: {webhook_url}", flush=True)
