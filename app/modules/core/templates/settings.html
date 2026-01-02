@@ -1,69 +1,82 @@
 {% extends "base.html" %}
 
 {% block content %}
-<style>#editor { min-height: 300px; max-height: 500px; overflow-y: auto; white-space: pre-wrap; border: 1px solid #dee2e6; border-radius: 0.375rem; padding: 1rem; background: #fff; }</style>
-
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <div><h4 class="fw-bold mb-1">功能配置</h4></div>
-    <button class="btn btn-primary px-4 shadow-sm" onclick="saveSettings()"><i class="fa-solid fa-save me-2"></i>保存所有配置</button>
+    <h4 class="fw-bold mb-0">功能配置</h4>
+    <button class="btn btn-primary px-4" onclick="saveSettings()">保存配置</button>
 </div>
 
 <div class="row g-4">
-    <!-- 左侧参数 -->
     <div class="col-lg-4">
         <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white fw-bold py-3">基础参数</div>
+            <div class="card-header bg-white fw-bold py-3">参数设置</div>
             <div class="card-body">
-                <div class="mb-4">
-                    <h6 class="text-primary fw-bold small">打卡</h6>
-                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="checkin_open" {{ 'checked' if conf.checkin_open }}><label>开启打卡</label></div>
-                    <input id="checkin_cmd" class="form-control form-control-sm mb-2" value="{{ conf.checkin_cmd }}" placeholder="指令: 打卡">
+                <div class="mb-3">
+                    <label class="fw-bold small text-primary">打卡</label>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="checkin_open" {{ 'checked' if conf.checkin_open }}>
+                        <label>开启打卡</label>
+                    </div>
+                    <input id="checkin_cmd" class="form-control form-control-sm mb-2" value="{{ conf.checkin_cmd }}" placeholder="指令">
                     <input type="number" id="checkin_del_time" class="form-control form-control-sm" value="{{ conf.checkin_del_time }}" placeholder="删除时间(秒)">
                 </div>
-                <div class="mb-4">
-                    <h6 class="text-info fw-bold small">查询</h6>
-                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="query_open" {{ 'checked' if conf.query_open }}><label>开启查询</label></div>
-                    <input id="query_cmd" class="form-control form-control-sm mb-2" value="{{ conf.query_cmd }}" placeholder="指令: 查询">
-                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="query_filter_open" {{ 'checked' if conf.query_filter_open }}><label>关键词搜索</label></div>
+                <hr>
+                <div class="mb-3">
+                    <label class="fw-bold small text-info">查询</label>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="query_open" {{ 'checked' if conf.query_open }}>
+                        <label>开启查询</label>
+                    </div>
+                    <input id="query_cmd" class="form-control form-control-sm mb-2" value="{{ conf.query_cmd }}" placeholder="指令">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="query_filter_open" {{ 'checked' if conf.query_filter_open }}>
+                        <label>关键词搜索</label>
+                    </div>
                     <div class="row g-2">
                         <div class="col-6"><input type="number" id="page_size" class="form-control form-control-sm" value="{{ conf.page_size }}" placeholder="行数"></div>
                         <div class="col-6"><input type="number" id="query_del_time" class="form-control form-control-sm" value="{{ conf.query_del_time }}" placeholder="删除(秒)"></div>
                     </div>
                 </div>
+                <hr>
                 <div>
-                    <h6 class="text-warning fw-bold small">其他</h6>
-                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if conf.auto_like }}><label>自动点赞</label></div>
+                    <label class="fw-bold small text-warning">其他</label>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="auto_like" {{ 'checked' if conf.auto_like }}>
+                        <label>自动点赞</label>
+                    </div>
                     <input id="like_emoji" class="form-control form-control-sm mb-2" value="{{ conf.like_emoji }}" placeholder="表情">
-                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="auto_mute_expired" {{ 'checked' if conf.auto_mute_expired }}><label class="text-danger">过期自动禁言</label></div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="auto_mute_expired" {{ 'checked' if conf.auto_mute_expired }}>
+                        <label class="text-danger">过期禁言</label>
+                    </div>
                     <input id="push_channel_id" class="form-control form-control-sm" value="{{ conf.push_channel_id or '' }}" placeholder="推送频道ID">
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 右侧文案 -->
     <div class="col-lg-8">
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
                 <select class="form-select form-select-sm w-auto fw-bold border-0 bg-light" id="msgSelector" onchange="loadMsg()">
-                    <option value="template">📋 列表单行模板</option>
-                    <option value="msg_checkin_success">✅ 打卡成功</option>
-                    <option value="msg_not_registered">⚠️ 未认证</option>
-                    <option value="msg_repeat_checkin">🔄 重复打卡</option>
-                    <option value="push_template">📢 推送模板</option>
+                    <option value="template">列表单行模板</option>
+                    <option value="msg_checkin_success">打卡成功提示</option>
+                    <option value="msg_not_registered">未认证提示</option>
+                    <option value="msg_repeat_checkin">重复打卡提示</option>
+                    <option value="push_template">推送模板</option>
                 </select>
-                <button class="btn btn-sm btn-outline-secondary" onclick="saveTmp()">暂存文案</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="saveTmp()">暂存</button>
             </div>
             <div class="card-body">
-                <div class="bg-light p-2 border-bottom d-flex gap-2 flex-wrap mb-2">
-                    <span class="badge bg-white text-dark border cursor-pointer" onclick="insert('{onlineEmoji}')">🟢在线</span>
-                    <span class="badge bg-white text-dark border cursor-pointer" onclick="insert('{序号}')">#️⃣序号</span>
-                    <span class="badge bg-white text-dark border cursor-pointer" onclick="insert('{tg_id}')">🆔ID</span>
+                <div class="mb-2">
+                    <button class="btn btn-sm btn-light border" onclick="insert('{onlineEmoji}')">状态</button>
+                    <button class="btn btn-sm btn-light border" onclick="insert('{序号}')">序号</button>
+                    <button class="btn btn-sm btn-light border" onclick="insert('{tg_id}')">ID</button>
                     {% for f in fields %}
-                    <span class="badge bg-primary bg-opacity-10 text-primary border cursor-pointer" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</span>
+                    <button class="btn btn-sm btn-light border" onclick="insert('{'+'{{ f.label }}'+'}')">{{ f.label }}</button>
                     {% endfor %}
                 </div>
-                <div id="editor" contenteditable="true"></div>
+                <div id="editor" class="form-control p-3" contenteditable="true" style="min-height: 250px;"></div>
             </div>
         </div>
 
@@ -74,38 +87,56 @@
             </div>
             <div class="card-body bg-light">
                 <div id="btnContainer" class="row g-3"></div>
-                <textarea id="custom_buttons" class="form-control d-none">{{ conf.custom_buttons }}</textarea>
+                <textarea id="custom_buttons" class="d-none">{{ conf.custom_buttons }}</textarea>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    let msgs={template:`{{ conf.template|default('')|safe }}`, push_template:`{{ conf.push_template|default('')|safe }}`, msg_checkin_success:`{{ conf.msg_checkin_success|default('')|safe }}`, msg_not_registered:`{{ conf.msg_not_registered|default('')|safe }}`, msg_repeat_checkin:`{{ conf.msg_repeat_checkin|default('')|safe }}`};
-    let btnData=[]; try{btnData=JSON.parse($('#custom_buttons').val()||'[]');}catch(e){}
+    let msgs = {
+        template: `{{ conf.template|default('')|safe }}`,
+        push_template: `{{ conf.push_template|default('')|safe }}`,
+        msg_checkin_success: `{{ conf.msg_checkin_success|default('')|safe }}`,
+        msg_not_registered: `{{ conf.msg_not_registered|default('')|safe }}`,
+        msg_repeat_checkin: `{{ conf.msg_repeat_checkin|default('')|safe }}`
+    };
+    let btnData = [];
+    try { btnData = JSON.parse($('#custom_buttons').val() || '[]'); } catch(e){}
 
-    function renderBtns(){$('#btnContainer').html(btnData.map((b,i)=>`<div class="col-md-6"><div class="input-group input-group-sm"><span class="input-group-text">文</span><input class="form-control" value="${b.text}" onchange="btnData[${i}].text=this.value"><span class="input-group-text">链</span><input class="form-control" value="${b.url}" onchange="btnData[${i}].url=this.value"><button class="btn btn-danger" onclick="btnData.splice(${i},1);renderBtns()">×</button></div></div>`).join('')||'<div class="text-center w-100 text-muted small">无按钮</div>');}
-    function addBtn(){btnData.push({text:'',url:''});renderBtns();}
-    
-    function loadMsg(){$('#editor').html(msgs[$('#msgSelector').val()]||'');}
-    function saveTmp(){msgs[$('#msgSelector').val()]=$('#editor').html(); showToast('已暂存','success');}
-    function insert(t){document.getElementById('editor').focus();document.execCommand('insertText',false,t);}
-    
-    async function saveSettings(){
-        saveTmp(); 
-        const d={
-            group_id:{{ group.id }}, 
-            config:{
-                ...msgs, 
-                checkin_open:$('#checkin_open').is(':checked'), checkin_cmd:$('#checkin_cmd').val(), checkin_del_time:$('#checkin_del_time').val(), 
-                query_open:$('#query_open').is(':checked'), query_cmd:$('#query_cmd').val(), query_filter_open:$('#query_filter_open').is(':checked'), query_del_time:$('#query_del_time').val(), page_size:$('#page_size').val(), 
-                auto_like:$('#auto_like').is(':checked'), like_emoji:$('#like_emoji').val(), auto_mute_expired:$('#auto_mute_expired').is(':checked'), 
-                push_channel_id:$('#push_channel_id').val(), custom_buttons:JSON.stringify(btnData.filter(b=>b.text&&b.url)), 
-                online_emoji:"{{ conf.online_emoji }}"
-            }
-        }; 
-        await postApi('/core/api/save_settings',d);
+    function renderBtns() {
+        $('#btnContainer').html(btnData.map((b, i) => `
+            <div class="col-md-6">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text">文</span>
+                    <input class="form-control" value="${b.text}" onchange="btnData[${i}].text=this.value">
+                    <span class="input-group-text">链</span>
+                    <input class="form-control" value="${b.url}" onchange="btnData[${i}].url=this.value">
+                    <button class="btn btn-danger" onclick="btnData.splice(${i},1);renderBtns()">×</button>
+                </div>
+            </div>`).join('') || '<div class="text-center w-100 text-muted small">无按钮</div>');
     }
-    $(()=>{loadMsg();renderBtns();});
+    
+    function addBtn() { btnData.push({text: '', url: ''}); renderBtns(); }
+    function loadMsg() { $('#editor').html(msgs[$('#msgSelector').val()] || ''); }
+    function saveTmp() { msgs[$('#msgSelector').val()] = $('#editor').html(); alert('已暂存'); }
+    function insert(t) { document.getElementById('editor').focus(); document.execCommand('insertText', false, t); }
+
+    async function saveSettings() {
+        saveTmp();
+        const d = {
+            group_id: {{ group.id }},
+            config: {
+                ...msgs,
+                checkin_open: $('#checkin_open').is(':checked'), checkin_cmd: $('#checkin_cmd').val(), checkin_del_time: $('#checkin_del_time').val(),
+                query_open: $('#query_open').is(':checked'), query_cmd: $('#query_cmd').val(), query_filter_open: $('#query_filter_open').is(':checked'), query_del_time: $('#query_del_time').val(), page_size: $('#page_size').val(),
+                auto_like: $('#auto_like').is(':checked'), like_emoji: $('#like_emoji').val(), auto_mute_expired: $('#auto_mute_expired').is(':checked'),
+                push_channel_id: $('#push_channel_id').val(), custom_buttons: JSON.stringify(btnData.filter(b => b.text && b.url)),
+                online_emoji: "{{ conf.online_emoji }}", offline_emoji: "{{ conf.offline_emoji }}"
+            }
+        };
+        await postApi('/core/api/save_settings', d);
+    }
+    $(() => { loadMsg(); renderBtns(); });
 </script>
 {% endblock %}
