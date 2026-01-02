@@ -1,13 +1,15 @@
-# 忽略 Python 缓存和虚拟环境
-__pycache__/
-*.py[cod]
-*$py.class
-.venv/
+# 忽略虚拟环境 (最关键！)
 venv/
+.venv/
 env/
 .env
 
-# 忽略本地数据库
+# 忽略 Python 缓存
+__pycache__/
+*.pyc
+
+# 忽略数据库文件 (防止本地数据库覆盖线上)
+instance/
 *.db
 *.sqlite3
 
