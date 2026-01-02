@@ -1,45 +1,38 @@
 {% extends "base.html" %}
 
-{% block full_content %}
-<div class="container mt-5">
-    <h2 class="text-center mb-4">选择要管理的群组</h2>
-    
-    {% if not groups %}
-    <div class="alert alert-warning text-center">
-        暂无活跃群组，请先将机器人拉入群组并设为管理员。
-        <br>
-        <a href="/core/select_group" class="btn btn-sm btn-primary mt-2">刷新列表</a>
-    </div>
-    {% endif %}
-
-    <div class="row justify-content-center">
-        <div class="col-md-8">
-            <div class="list-group">
-                {% for g in groups %}
-                <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
-                    <a href="/core/group/{{ g.id }}/dashboard" class="text-decoration-none text-dark flex-grow-1">
-                        <h5 class="mb-1">{{ g.title }}</h5>
-                        <small>ID: {{ g.chat_id }}</small>
-                    </a>
-                    <div>
-                        {% if g.is_active %}
-                        <span class="badge bg-success">活跃</span>
-                        {% else %}
-                        <span class="badge bg-secondary">停用</span>
-                        {% endif %}
-                        <button class="btn btn-sm btn-danger ms-2" onclick="delGroup({{ g.id }})">删除</button>
+{% block content %}
+<!-- 在 base.html 中已经通过CSS隐藏了侧边栏，这里直接写全屏内容 -->
+<div class="row justify-content-center mt-5">
+    <div class="col-md-8 col-lg-6">
+        <div class="text-center mb-5"><h2 class="fw-bold">选择群组</h2><p class="text-muted">请选择一个 Telegram 群组进入配置</p></div>
+        
+        {% if groups %}
+        <div class="list-group shadow-sm border-0 rounded-3">
+            {% for g in groups %}
+            <div class="list-group-item p-4 d-flex align-items-center justify-content-between border-bottom">
+                <a href="/core/group/{{ g.id }}/dashboard" class="d-flex align-items-center text-decoration-none text-dark flex-grow-1">
+                    <div class="bg-light rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 48px; height: 48px;">
+                        <i class="fa-solid fa-users text-primary"></i>
                     </div>
+                    <div><h5 class="mb-0 fw-bold">{{ g.title }}</h5><small class="text-muted">ID: {{ g.chat_id }}</small></div>
+                </a>
+                
+                <div class="d-flex align-items-center gap-2">
+                    {% if g.is_active %}<span class="badge bg-success bg-opacity-10 text-success rounded-pill">活跃</span>{% else %}<span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill">停用</span>{% endif %}
+                    <button class="btn btn-sm btn-outline-danger border-0" onclick="deleteGroup({{ g.id }}, '{{ g.title }}')" title="删除"><i class="fa-solid fa-trash"></i></button>
+                    <a href="/core/group/{{ g.id }}/dashboard" class="btn btn-sm btn-light"><i class="fa-solid fa-chevron-right"></i></a>
                 </div>
-                {% endfor %}
             </div>
+            {% endfor %}
         </div>
+        {% else %}
+        <div class="card text-center p-5 border-0 shadow-sm"><i class="fa-solid fa-inbox fa-3x text-muted opacity-25 mb-3"></i><h5>暂无群组</h5><p class="text-muted">将机器人拉入群组并设为管理员，然后刷新。</p><a href="/core/select_group" class="btn btn-primary mt-3">刷新列表</a></div>
+        {% endif %}
     </div>
 </div>
 <script>
-    function delGroup(id) {
-        if(confirm('确定要删除该群组及其所有数据吗？')) {
-            postApi('/core/api/toggle_group', {id: id, action: 'delete'});
-        }
+    function deleteGroup(id, title) {
+        if(confirm(`⚠️ 确定要删除群组 "${title}" 吗？`)) postApi('/core/api/toggle_group', {id: id, action: 'delete'});
     }
 </script>
 {% endblock %}
