@@ -1,4 +1,4 @@
-{% extends "layout_admin.html" %}
+{% extends "base.html" %}
 
 {% block content %}
 <div class="card shadow mb-4">
@@ -24,7 +24,10 @@
                     {% for u in users %}
                     <tr>
                         <td class="ps-4 fw-bold text-dark">{{ u.tg_id }}</td>
-                        {% set profile = u.profile_data | fromjson %}
+                        
+                        <!-- ⚡️ 修复点：直接使用后端预处理好的 profile_dict -->
+                        {% set profile = u.profile_dict %}
+                        
                         {% for f in fields %}
                             <td>{{ profile[f.key] }}</td>
                         {% endfor %}
@@ -44,7 +47,8 @@
                             {% endif %}
                         </td>
                         <td class="text-end pe-4">
-                            <button class="btn btn-sm btn-light text-primary" onclick='openEdit({{ u.id }}, {{ u.tg_id }}, {{ u.profile_data|tojson|safe }})' title="编辑">
+                            <!-- JS 传参还是可以用 profile_data (json字符串) -->
+                            <button class="btn btn-sm btn-light text-primary" onclick='openEdit({{ u.id }}, {{ u.tg_id }}, {{ u.profile_data|safe }})' title="编辑">
                                 <i class="fa-solid fa-pen"></i>
                             </button>
                             <button class="btn btn-sm btn-light text-danger ms-1" onclick="delUser({{ u.id }})" title="删除">
@@ -66,7 +70,7 @@
     </div>
 </div>
 
-<!-- 模态框保持原样逻辑，样式已通过 base.html 的 Bootstrap 覆盖 -->
+<!-- 模态框和JS脚本保持不变 -->
 <div class="modal fade" id="editModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content border-0 shadow-lg">
@@ -111,7 +115,6 @@
 </div>
 
 <script>
-    // JS 逻辑保持不变
     function openAdd() {
         $('#edit_id').val(''); $('#edit_tg_id').val('').prop('disabled', false);
         $('.dynamic-field').val(''); $('#edit_add_days').val('');
