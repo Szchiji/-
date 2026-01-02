@@ -1,64 +1,58 @@
 {% extends "base.html" %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="fw-bold m-0">字段配置 ({{ group.title }})</h4>
-    <button class="btn btn-primary fw-bold px-4" onclick="saveFields()"><i class="fa-solid fa-save me-2"></i>保存</button>
-</div>
 
-<div class="card shadow-sm border-0">
+{% block content %}
+<div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center bg-white">
+        <h6 class="m-0 font-weight-bold text-primary">字段配置</h6>
+        <button class="btn btn-outline-primary btn-sm" onclick="saveFields()">
+            <i class="fa-solid fa-save me-1"></i> 保存更改
+        </button>
+    </div>
     <div class="card-body">
-        <div id="fields-con"></div>
-        <button class="btn btn-outline-primary w-100 mt-3 border-2 border-dashed" onclick="addField()">
-            <i class="fa-solid fa-plus me-1"></i> 添加新字段
+        <div id="fields-container"></div>
+        <button class="btn btn-light w-100 mt-3 border-dashed py-3 text-primary fw-bold" onclick="addField()" style="border: 2px dashed #e3e6f0;">
+            <i class="fa-solid fa-plus me-2"></i> 添加新字段
         </button>
     </div>
 </div>
 
 <script>
-    let fields = {{ fields_json|safe }};
-    const container = document.getElementById('fields-con');
-
+    let currentFields = {{ fields_json | safe }};
     function render() {
-        container.innerHTML = '';
-        fields.forEach((f, i) => {
-            container.innerHTML += `
-            <div class="row g-2 align-items-center mb-3 bg-light p-3 rounded border">
+        let html = '';
+        currentFields.forEach((f, idx) => {
+            html += `
+            <div class="row g-2 align-items-center mb-3 pb-3 border-bottom field-item">
                 <div class="col-md-3">
-                    <label class="small text-muted">字段名 (key)</label>
-                    <input class="form-control form-control-sm" value="${f.key}" oninput="fields[${i}].key=this.value" placeholder="英文,如 region">
+                    <label class="small text-muted fw-bold">字段键名 (Key)</label>
+                    <input type="text" class="form-control bg-light" value="${f.key}" onchange="updateField(${idx}, 'key', this.value)" placeholder="如: age">
                 </div>
                 <div class="col-md-3">
-                    <label class="small text-muted">显示名 (label)</label>
-                    <input class="form-control form-control-sm" value="${f.label}" oninput="fields[${i}].label=this.value" placeholder="中文,如 地区">
+                    <label class="small text-muted fw-bold">显示名称 (Label)</label>
+                    <input type="text" class="form-control fw-bold" value="${f.label}" onchange="updateField(${idx}, 'label', this.value)" placeholder="如: 年龄">
                 </div>
-                <div class="col-md-3">
-                    <label class="small text-muted">类型</label>
-                    <select class="form-select form-select-sm" onchange="fields[${i}].type=this.value; render()">
+                <div class="col-md-2">
+                    <label class="small text-muted fw-bold">类型</label>
+                    <select class="form-select" onchange="updateField(${idx}, 'type', this.value)">
                         <option value="text" ${f.type=='text'?'selected':''}>文本</option>
                         <option value="select" ${f.type=='select'?'selected':''}>下拉菜单</option>
                     </select>
                 </div>
-                <div class="col-md-2">
-                    ${f.type==='select' ? `<label class="small text-muted">选项 (逗号隔开)</label><input class="form-control form-control-sm" value="${(f.options||[]).join(',')}" oninput="fields[${i}].options=this.value.split(',')">` : ''}
+                <div class="col-md-3">
+                    <label class="small text-muted fw-bold">选项 (仅下拉有效)</label>
+                    <input type="text" class="form-control" value="${f.options||''}" onchange="updateField(${idx}, 'options', this.value)" ${f.type!='select'?'disabled':''} placeholder="A,B,C">
                 </div>
-                <div class="col-md-1 text-end">
-                    <button class="btn btn-sm btn-outline-danger mt-4" onclick="fields.splice(${i},1);render()"><i class="fa-solid fa-trash"></i></button>
+                <div class="col-md-1 text-center pt-4">
+                    <button class="btn btn-link text-danger" onclick="removeField(${idx})"><i class="fa-solid fa-trash"></i></button>
                 </div>
             </div>`;
         });
+        $('#fields-container').html(html);
     }
-
-    function addField() { fields.push({key:'', label:'', type:'text'}); render(); }
-    
-    function saveFields() {
-        // 直接传 fields 列表
-        fetch('/core/api/save_fields', {
-            method:'POST', 
-            headers:{'Content-Type':'application/json'}, 
-            body:JSON.stringify(fields) 
-        }).then(()=>alert('✅ 字段配置已保存'));
-    }
-
+    function addField() { currentFields.push({key: '', label: '', type: 'text', options: ''}); render(); }
+    function removeField(idx) { currentFields.splice(idx, 1); render(); }
+    function updateField(idx, key, val) { currentFields[idx][key] = val; if(key === 'type') render(); }
+    async function saveFields() { await postApi('/core/api/save_fields', {fields: currentFields}); }
     render();
 </script>
 {% endblock %}
