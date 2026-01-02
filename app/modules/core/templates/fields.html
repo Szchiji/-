@@ -1,63 +1,31 @@
 {% extends "layout_admin.html" %}
-
 {% block content %}
+<div class="alert alert-info border-0 shadow-sm mb-4 d-flex align-items-center"><i class="fa-solid fa-circle-info fa-lg me-3 text-info"></i><div><h6 class="fw-bold mb-1">配置说明</h6><p class="mb-0 small opacity-75">配置用户录入的资料。<strong>键名(Key)</strong>必须是唯一英文，<strong>显示名称</strong>是给用户看的。</p></div></div>
 <div class="card shadow mb-4">
-    <div class="card-header py-3 d-flex justify-content-between align-items-center bg-white">
-        <h6 class="m-0 font-weight-bold text-primary">字段配置</h6>
-        <button class="btn btn-primary btn-sm" onclick="saveFields()">
-            <i class="fa-solid fa-save me-1"></i> 保存更改
-        </button>
-    </div>
-    <div class="card-body">
-        <div id="fields-container"></div>
-        <button class="btn btn-light w-100 mt-3 border-dashed py-3 text-primary fw-bold" onclick="addField()" style="border: 2px dashed #e3e6f0;">
-            <i class="fa-solid fa-plus me-2"></i> 添加新字段
-        </button>
-    </div>
+    <div class="card-header py-3 d-flex justify-content-between align-items-center bg-white"><h6 class="m-0 font-weight-bold text-primary">字段列表</h6><button id="saveBtn" class="btn btn-primary btn-sm px-3 fw-bold" onclick="saveFields()"><i class="fa-solid fa-save me-1"></i> 保存配置</button></div>
+    <div class="card-body"><div id="fields-container"></div><button class="btn btn-light w-100 mt-3 border-dashed py-3 text-primary fw-bold" onclick="addField()" style="border: 2px dashed #e3e6f0;"><i class="fa-solid fa-plus-circle me-1"></i> 添加新字段</button></div>
 </div>
-
 <script>
     let currentFields = {{ fields_json | safe }} || [];
     if(!Array.isArray(currentFields)) currentFields = [];
-
     function render() {
         let html = '';
         currentFields.forEach((f, idx) => {
-            html += `
-            <div class="row g-2 align-items-center mb-3 pb-3 border-bottom field-item">
-                <div class="col-md-3">
-                    <label class="small text-muted fw-bold">字段Key (英文)</label>
-                    <input type="text" class="form-control bg-light" value="${f.key||''}" onchange="upd(${idx},'key',this.value)" placeholder="如: age">
-                </div>
-                <div class="col-md-3">
-                    <label class="small text-muted fw-bold">显示名称</label>
-                    <input type="text" class="form-control fw-bold" value="${f.label||''}" onchange="upd(${idx},'label',this.value)" placeholder="如: 年龄">
-                </div>
-                <div class="col-md-2">
-                    <label class="small text-muted fw-bold">类型</label>
-                    <select class="form-select" onchange="upd(${idx},'type',this.value)">
-                        <option value="text" ${f.type=='text'?'selected':''}>文本</option>
-                        <option value="select" ${f.type=='select'?'selected':''}>下拉菜单</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="small text-muted fw-bold">选项 (逗号分隔)</label>
-                    <input type="text" class="form-control" value="${f.options||''}" onchange="upd(${idx},'options',this.value)" ${f.type!='select'?'disabled':''} placeholder="A,B,C">
-                </div>
-                <div class="col-md-1 text-center pt-4">
-                    <button class="btn btn-link text-danger" onclick="rem(${idx})"><i class="fa-solid fa-trash"></i></button>
-                </div>
-            </div>`;
+            html += `<div class="field-item p-3 mb-3 border rounded bg-light"><div class="row g-3 align-items-end"><div class="col-md-3"><label class="form-label small fw-bold text-muted mb-1">Key (英文)*</label><input type="text" class="form-control" value="${f.key||''}" onchange="upd(${idx},'key',this.value)"></div><div class="col-md-3"><label class="form-label small fw-bold text-muted mb-1">显示名称*</label><input type="text" class="form-control fw-bold" value="${f.label||''}" onchange="upd(${idx},'label',this.value)"></div><div class="col-md-2"><label class="form-label small fw-bold text-muted mb-1">类型</label><select class="form-select" onchange="upd(${idx},'type',this.value)"><option value="text" ${f.type=='text'?'selected':''}>文本</option><option value="select" ${f.type=='select'?'selected':''}>下拉</option></select></div><div class="col-md-3"><label class="form-label small fw-bold text-muted mb-1">选项 (逗号隔开)</label><input type="text" class="form-control" value="${f.options||''}" onchange="upd(${idx},'options',this.value)" ${f.type!='select'?'disabled':''}></div><div class="col-md-1 text-end"><button class="btn btn-outline-danger btn-sm border-0" onclick="rem(${idx})"><i class="fa-solid fa-trash-can fa-lg"></i></button></div></div></div>`;
         });
-        if(currentFields.length===0) html='<div class="text-center text-muted py-4">暂无字段</div>';
+        if(currentFields.length===0) html='<div class="text-center py-5 text-muted">暂无字段</div>';
         $('#fields-container').html(html);
     }
-    
     function addField() { currentFields.push({key:'',label:'',type:'text',options:''}); render(); }
-    function rem(i) { currentFields.splice(i,1); render(); }
+    function rem(i) { if(confirm('确认删除此字段?')) { currentFields.splice(i,1); render(); } }
     function upd(i,k,v) { currentFields[i][k]=v; if(k==='type') render(); }
-    async function saveFields() { await postApi('/core/api/save_fields', {fields: currentFields}); }
-    
+    async function saveFields() {
+        const btn = $('#saveBtn');
+        for(let f of currentFields) if(!f.key||!f.label) return alert('请填写完整的 Key 和 显示名称');
+        btn.prop('disabled',true).text('保存中...');
+        try { await postApi('/core/api/save_fields', {fields: currentFields}); } catch(e) { alert('失败'); }
+        btn.prop('disabled',false).html('<i class="fa-solid fa-save me-1"></i> 保存配置');
+    }
     $(document).ready(render);
 </script>
 {% endblock %}
