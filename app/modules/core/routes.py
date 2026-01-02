@@ -1,7 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, session, jsonify
 from app import db
 from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM
-# ⚡️ 移除 ReactionTypeEmoji，防止报错
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions, ChatMember
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ChatMemberHandler, filters
 import os, jwt, time, json, asyncio, re, requests, math
@@ -9,15 +8,14 @@ from datetime import datetime, timedelta
 
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
 
-# 全局变量
+# --- 全局变量 ---
 global_ptb_app = None
 global_bot_loop = None
 
-# --- Webhook 接收端点 ---
+# --- Webhook ---
 @core_bp.route('/webhook', methods=['POST'])
 def webhook():
-    if not global_ptb_app or not global_bot_loop:
-        return "Bot Not Ready", 503
+    if not global_ptb_app or not global_bot_loop: return "Bot Not Ready", 503
     try:
         json_data = request.get_json(force=True)
         update = Update.de_json(json_data, global_ptb_app.bot)
@@ -258,39 +256,41 @@ async def bot_start(update: Update, context):
 
 def do_like(chat_id, message_id, emoji):
     """
-    ⚡️ 强力点赞功能 (带重试机制)
+    发送点赞 (终极修复版：清理字符 + 严格 JSON)
     """
     token = os.getenv('TOKEN')
     
-    # 1. 尝试使用用户配置的表情
-    print(f"👍 [Like] 尝试点赞: {emoji}", flush=True)
-    url = f"https://api.telegram.org/bot{token}/setMessageReaction"
-    payload = {
-        "chat_id": chat_id, 
-        "message_id": message_id, 
-        "reaction": [{"type": "emoji", "emoji": emoji}]
-    }
+    # 1. 深度清理：只保留非空字符
+    clean_emoji = emoji.strip()
+    if not clean_emoji:
+        clean_emoji = "👍" # 保底
+        
+    print(f"👍 [Like] 准备点赞: {clean_emoji} (原始: '{emoji}')", flush=True)
     
-    try:
-        resp = requests.post(url, json=payload, timeout=5)
+    try: 
+        url = f"https://api.telegram.org/bot{token}/setMessageReaction"
+        
+        # 2. 构造 Reaction 对象
+        reaction_obj = [{"type": "emoji", "emoji": clean_emoji}]
+        
+        # 3. 发送请求
+        resp = requests.post(
+            url, 
+            json={"chat_id": chat_id, "message_id": message_id, "reaction": reaction_obj}, 
+            timeout=5
+        )
+        
         if resp.status_code == 200:
-            print("✅ 点赞成功！", flush=True)
-            return
-        
-        print(f"⚠️ [Like] 首次失败: {resp.text}", flush=True)
-        
-        # 2. 如果失败，尝试使用最安全的 "👍" (Fallback)
-        if "REACTION_INVALID" in resp.text:
-            print("🔄 [Like] 尝试使用默认表情 👍 重试...", flush=True)
-            payload["reaction"][0]["emoji"] = "👍"
-            resp2 = requests.post(url, json=payload, timeout=5)
-            if resp2.status_code == 200:
-                print("✅ 默认表情点赞成功！", flush=True)
-            else:
-                print(f"❌ [Like] 重试也失败: {resp2.text}", flush=True)
-                
+            print("✅ [Like] 成功！", flush=True)
+        else:
+            print(f"❌ [Like] 失败: {resp.text}", flush=True)
+            # 如果失败，尝试 Plan B：发送一条回复
+            # if "REACTION_INVALID" in resp.text:
+            #     requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
+            #         json={"chat_id": chat_id, "reply_to_message_id": message_id, "text": clean_emoji})
+
     except Exception as e:
-        print(f"❌ 点赞请求异常: {e}", flush=True)
+        print(f"❌ [Like] 请求异常: {e}", flush=True)
 
 async def check_expiration_and_mute(context, group_id, user_id, chat_id, conf):
     from app import create_app
@@ -424,14 +424,15 @@ async def bot_handler(update: Update, context):
     user = update.effective_user
     text = msg.text.strip() if msg.text else ""
 
+    # 1. 自动点赞逻辑 (包含调试日志)
     if conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
             exists = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
             
             if exists:
-                # ⚡️ 自动去除表情前后的空格，解决隐形字符问题
-                emoji = conf.get('like_emoji', '❤️').strip()
+                emoji = conf.get('like_emoji', '❤️')
+                # ⚡️ 调用点赞 (同步函数)
                 do_like(msg.chat.id, msg.message_id, emoji)
                 
                 if conf.get('auto_mute_expired'): 
