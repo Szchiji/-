@@ -22,12 +22,9 @@ def webhook():
         json_data = request.get_json(force=True)
         update = Update.de_json(json_data, global_ptb_app.bot)
         
-        # 核心修复：使用全局 Loop 还是新 Loop？
-        # 在 Flask 线程中，我们需要将协程提交给 Bot 运行的 Loop
         if global_bot_loop and global_bot_loop.is_running():
             asyncio.run_coroutine_threadsafe(global_ptb_app.process_update(update), global_bot_loop)
         else:
-            # 如果 Bot Loop 没在跑 (极少情况)，我们尝试临时运行
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(global_ptb_app.process_update(update))
@@ -198,8 +195,12 @@ def api_toggle_group():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     group = BotGroup.query.get(request.json.get('id'))
     if group:
-        if request.json.get('action') == 'delete': db.session.delete(group)
-        else: group.is_active = request.json.get('active')
+        if request.json.get('action') == 'delete':
+             # ⚡️ 修复：先删除关联的用户，再删除群组
+             GroupUser.query.filter_by(group_id=group.id).delete()
+             db.session.delete(group)
+        else:
+             group.is_active = request.json.get('active')
         db.session.commit()
     return jsonify({"status": "ok"})
 
