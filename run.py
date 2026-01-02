@@ -27,22 +27,25 @@ def fix_database_schema(app):
 
 def run_flask():
     port = int(os.getenv('PORT', 5000))
-    # 增加 threaded=True 确保并发处理
-    app.run(host='0.0.0.0', port=port, use_reloader=False, threaded=True)
+    app.run(host='0.0.0.0', port=port, use_reloader=False)
 
-def start_bot_process():
-    # 稍微多等一会儿，确保 Flask 彻底启动
-    time.sleep(10)
+def start_bot_process_forever():
+    """
+    启动一个永不退出的事件循环，供 Webhook 使用
+    """
+    time.sleep(3)
     from app.modules.core.routes import run_bot
-    print("🤖 正在启动机器人进程...", flush=True)
+    
+    print("🤖 启动机器人后台循环...", flush=True)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(run_bot())
-    except Exception as e:
-        print(f"❌ 机器人进程出错: {e}", flush=True)
-    finally:
-        loop.close()
+    
+    # 1. 初始化 (WebHook模式下 run_bot 会运行完设置 Webhook 后返回)
+    loop.run_until_complete(run_bot())
+    
+    # 2. ⚡️ 核心：让 Loop 永远跑下去，活着等待 Flask 的投喂
+    print("✅ 机器人循环已启动，正在监听 Webhook 任务...", flush=True)
+    loop.run_forever() 
 
 if __name__ == '__main__':
     domain = os.getenv('RAILWAY_PUBLIC_DOMAIN')
@@ -57,11 +60,12 @@ if __name__ == '__main__':
     db_thread = threading.Thread(target=fix_database_schema, args=(app,), daemon=True)
     db_thread.start()
     
-    # 3. 启动机器人
+    # 3. 启动机器人 (在独立线程中跑 loop_forever)
+    bot_thread = threading.Thread(target=start_bot_process_forever, daemon=True)
+    bot_thread.start()
+    
+    # 4. 主线程死循环保活
     try:
-        start_bot_process()
-        print("🎉 系统已就绪，正在等待消息...", flush=True)
-        # 死循环保持容器不退出
         while True:
             time.sleep(3600)
     except KeyboardInterrupt:
