@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, session, jsonify
 from app import db
 from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM
+# ⚡️ 移除 ReactionTypeEmoji，防止报错
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions, ChatMember
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ChatMemberHandler, filters
 import os, jwt, time, json, asyncio, re, requests, math
@@ -135,18 +136,14 @@ def api_save_user():
     d = request.json
     gid = d.get('group_id') or session.get('current_group_id')
     try:
-        tg_id_raw = d.get('tg_id')
-        if not tg_id_raw: return jsonify({"status": "err", "msg": "Telegram ID 不能为空"})
-        tg_id = int(tg_id_raw)
-        
+        tg_id = safe_int(d.get('tg_id'))
+        if not tg_id: return jsonify({"status": "err", "msg": "Telegram ID 不能为空"})
         u = GroupUser.query.filter_by(group_id=gid, tg_id=tg_id).first()
         if not u:
             u = GroupUser(group_id=gid, tg_id=tg_id)
             db.session.add(u)
         u.profile_data = json.dumps(d.get('profile', {}), ensure_ascii=False)
-        
-        days_raw = d.get('add_days')
-        days = int(days_raw) if days_raw and str(days_raw).strip() else 0
+        days = safe_int(d.get('add_days'))
         if days:
             now = datetime.now()
             base = u.expiration_date if (u.expiration_date and u.expiration_date > now) else now
@@ -261,25 +258,39 @@ async def bot_start(update: Update, context):
 
 def do_like(chat_id, message_id, emoji):
     """
-    发送点赞 (使用原生 API，不依赖库版本)
+    ⚡️ 强力点赞功能 (带重试机制)
     """
     token = os.getenv('TOKEN')
-    try: 
-        # 直接调用 Telegram 官方 API
-        url = f"https://api.telegram.org/bot{token}/setMessageReaction"
-        payload = {
-            "chat_id": chat_id, 
-            "message_id": message_id, 
-            "reaction": [{"type": "emoji", "emoji": emoji}]
-        }
+    
+    # 1. 尝试使用用户配置的表情
+    print(f"👍 [Like] 尝试点赞: {emoji}", flush=True)
+    url = f"https://api.telegram.org/bot{token}/setMessageReaction"
+    payload = {
+        "chat_id": chat_id, 
+        "message_id": message_id, 
+        "reaction": [{"type": "emoji", "emoji": emoji}]
+    }
+    
+    try:
         resp = requests.post(url, json=payload, timeout=5)
-        # 打印一下结果，方便调试
-        if resp.status_code != 200:
-            print(f"⚠️ [Like API] 失败: {resp.text}", flush=True)
-        else:
-            print(f"✅ [Like API] 成功: {emoji}", flush=True)
+        if resp.status_code == 200:
+            print("✅ 点赞成功！", flush=True)
+            return
+        
+        print(f"⚠️ [Like] 首次失败: {resp.text}", flush=True)
+        
+        # 2. 如果失败，尝试使用最安全的 "👍" (Fallback)
+        if "REACTION_INVALID" in resp.text:
+            print("🔄 [Like] 尝试使用默认表情 👍 重试...", flush=True)
+            payload["reaction"][0]["emoji"] = "👍"
+            resp2 = requests.post(url, json=payload, timeout=5)
+            if resp2.status_code == 200:
+                print("✅ 默认表情点赞成功！", flush=True)
+            else:
+                print(f"❌ [Like] 重试也失败: {resp2.text}", flush=True)
+                
     except Exception as e:
-        print(f"❌ [Like Func] 出错: {e}", flush=True)
+        print(f"❌ 点赞请求异常: {e}", flush=True)
 
 async def check_expiration_and_mute(context, group_id, user_id, chat_id, conf):
     from app import create_app
@@ -413,16 +424,14 @@ async def bot_handler(update: Update, context):
     user = update.effective_user
     text = msg.text.strip() if msg.text else ""
 
-    # ⚡️ 修复点：直接调用 do_like，跳过库的兼容性问题
     if conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
             exists = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
+            
             if exists:
-                emoji = conf.get('like_emoji', '❤️')
-                print(f"👍 [Like] 给用户 {user.id} 点赞: {emoji}", flush=True)
-                
-                # 直接调用同步函数
+                # ⚡️ 自动去除表情前后的空格，解决隐形字符问题
+                emoji = conf.get('like_emoji', '❤️').strip()
                 do_like(msg.chat.id, msg.message_id, emoji)
                 
                 if conf.get('auto_mute_expired'): 
