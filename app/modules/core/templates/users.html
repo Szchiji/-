@@ -1,85 +1,62 @@
 {% extends "layout_admin.html" %}
 
 {% block content %}
-<!-- 气泡提示容器 -->
-<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1055;">
-    <div id="liveToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true">
-        <div class="d-flex">
-            <div class="toast-body fw-bold">
-                <i class="fa-solid fa-check-circle me-2"></i> <span id="toastMsg">操作成功</span>
-            </div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-        </div>
-    </div>
-</div>
-
 <div class="card shadow mb-4">
     <div class="card-header py-3 d-flex justify-content-between align-items-center bg-white">
-        <h6 class="m-0 font-weight-bold text-primary"><i class="fa-solid fa-table me-1"></i> 用户列表</h6>
-        <button class="btn btn-primary btn-sm shadow-sm" onclick="openAdd()">
-            <i class="fa-solid fa-plus fa-sm text-white-50 me-1"></i> 添加用户
+        <h6 class="m-0 font-weight-bold text-primary">用户列表</h6>
+        <button class="btn btn-primary btn-sm" onclick="openAdd()">
+            <i class="fa-solid fa-plus me-1"></i> 添加用户
         </button>
     </div>
     <div class="card-body px-0 pt-0">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0" style="border-color: #f0f0f0;">
-                <thead class="bg-light text-muted text-uppercase small font-weight-bold">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light text-muted small fw-bold">
                     <tr>
-                        <th class="ps-4 py-3">Telegram ID</th>
+                        <th class="ps-4">TG ID</th>
                         {% for f in fields %}<th>{{ f.label }}</th>{% endfor %}
                         <th>状态</th>
                         <th>过期时间</th>
-                        <th class="text-end pe-4" style="min-width: 140px;">管理操作</th>
+                        <th class="text-end pe-4">管理</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for u in users %}
                     <tr>
-                        <td class="ps-4 fw-bold text-dark">{{ u.tg_id }}</td>
-                        
-                        {# 使用后端预处理好的 profile_dict #}
+                        <td class="ps-4 fw-bold">{{ u.tg_id }}</td>
                         {% set profile = u.profile_dict %}
-                        
-                        {% for f in fields %}
-                            <td>{{ profile[f.key] }}</td>
-                        {% endfor %}
+                        {% for f in fields %}<td>{{ profile.get(f.key, '') }}</td>{% endfor %}
                         <td>
-                            {% if u.online %}
-                                <span class="badge rounded-pill bg-success bg-opacity-10 text-success px-3">在线</span>
-                            {% else %}
-                                <span class="badge rounded-pill bg-secondary bg-opacity-10 text-secondary px-3">离线</span>
-                            {% endif %}
+                            {% if u.online %}<span class="badge bg-success bg-opacity-10 text-success">在线</span>
+                            {% else %}<span class="badge bg-secondary bg-opacity-10 text-secondary">离线</span>{% endif %}
                         </td>
                         <td>
                             {% if u.expiration_date %}
-                                <span class="text-muted small">{{ u.expiration_date.strftime('%Y-%m-%d') }}</span>
-                                {% if u.is_banned %}<span class="badge bg-danger ms-1">封禁中</span>{% endif %}
-                            {% else %}
-                                <span class="badge bg-info bg-opacity-10 text-info">永久</span>
-                            {% endif %}
+                                <span class="small">{{ u.expiration_date.strftime('%Y-%m-%d') }}</span>
+                                {% if u.is_banned %}<span class="badge bg-danger">封</span>{% endif %}
+                            {% else %}<span class="badge bg-info bg-opacity-10 text-info">永久</span>{% endif %}
                         </td>
                         <td class="text-end pe-4">
-                            <!-- ⚡️ 推送按钮 -->
-                            <button class="btn btn-sm btn-light text-success me-1" onclick="pushUser({{ u.id }})" title="推送到频道">
-                                <i class="fa-solid fa-paper-plane"></i>
+                            <!-- 推送按钮 -->
+                            <button class="btn btn-sm btn-light text-warning" onclick="pushUser({{ u.id }})" title="推送到频道">
+                                <i class="fa-solid fa-bullhorn"></i>
                             </button>
                             <!-- 编辑按钮 -->
-                            <button class="btn btn-sm btn-light text-primary me-1" onclick='openEdit({{ u.id }}, {{ u.tg_id }}, {{ u.profile_data|safe }})' title="编辑资料">
+                            <button class="btn btn-sm btn-light text-primary" 
+                                    data-id="{{ u.id }}" 
+                                    data-tgid="{{ u.tg_id }}"
+                                    data-profile='{{ u.profile_data|safe }}'
+                                    onclick="openEdit(this)" title="编辑">
                                 <i class="fa-solid fa-pen"></i>
                             </button>
                             <!-- 删除按钮 -->
-                            <button class="btn btn-sm btn-light text-danger" onclick="delUser({{ u.id }})" title="删除用户">
+                            <button class="btn btn-sm btn-light text-danger" onclick="delUser({{ u.id }})" title="删除">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
                         </td>
                     </tr>
                     {% else %}
-                    <tr>
-                        <td colspan="10" class="text-center py-5 text-muted">
-                            <i class="fa-solid fa-folder-open fa-2x mb-3 d-block opacity-25"></i>
-                            暂无用户数据，请点击右上角添加。
-                        </td>
-                    </tr>
+                    <tr><td colspan="10" class="text-center py-5 text-muted">暂无数据</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -92,132 +69,83 @@
     <div class="modal-dialog">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header bg-light border-bottom-0">
-                <h5 class="modal-title fw-bold">编辑用户信息</h5>
+                <h5 class="modal-title fw-bold" id="modalTitle">编辑用户</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
                 <input type="hidden" id="edit_id">
                 <div class="mb-3">
-                    <label class="form-label text-muted small fw-bold">TELEGRAM ID</label>
-                    <input type="number" class="form-control form-control-lg bg-light" id="edit_tg_id" placeholder="输入用户的数字ID">
+                    <label class="form-label small fw-bold text-muted">TELEGRAM ID</label>
+                    <input type="number" class="form-control bg-light" id="edit_tg_id">
                 </div>
-                
                 {% for f in fields %}
                 <div class="mb-3">
-                    <label class="form-label text-muted small fw-bold">{{ f.label }}</label>
+                    <label class="form-label small fw-bold text-muted">{{ f.label }}</label>
                     {% if f.type == 'select' %}
-                    <select class="form-select form-select-lg dynamic-field" data-key="{{ f.key }}">
-                        {# 容错处理 #}
-                        {% set opts = f.options if f.options is iterable and f.options is not string else (f.options or '').split(',') %}
-                        {% for opt in opts %}
-                            {% if opt %}
-                            <option value="{{ opt }}">{{ opt }}</option>
-                            {% endif %}
+                    <select class="form-select dynamic-field" data-key="{{ f.key }}">
+                        <option value="">请选择</option>
+                        {% for opt in (f.options or '').split(',') %}
+                            {% if opt.strip() %}<option value="{{ opt.strip() }}">{{ opt.strip() }}</option>{% endif %}
                         {% endfor %}
                     </select>
                     {% else %}
-                    <input type="text" class="form-control form-control-lg dynamic-field" data-key="{{ f.key }}">
+                    <input type="text" class="form-control dynamic-field" data-key="{{ f.key }}">
                     {% endif %}
                 </div>
                 {% endfor %}
-                
-                <div class="alert alert-info border-0 d-flex align-items-center mt-4">
+                <div class="alert alert-info border-0 mt-4 d-flex align-items-center">
                     <i class="fa-solid fa-clock me-2"></i>
                     <div class="flex-grow-1">
-                        <label class="form-label fw-bold mb-0">有效期增加 (天)</label>
+                        <label class="mb-0 fw-bold small">增加有效期 (天)</label>
                         <input type="number" class="form-control form-control-sm mt-1" id="edit_add_days" placeholder="0 = 不修改">
                     </div>
                 </div>
             </div>
             <div class="modal-footer border-top-0 pt-0 pb-4 pe-4">
                 <button type="button" class="btn btn-light" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary px-4" onclick="saveUser()">保存更改</button>
+                <button type="button" class="btn btn-primary px-4" onclick="saveUser()">保存</button>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    // 显示气泡提示
-    function showToast(msg, isError=false) {
-        const t = document.getElementById('liveToast');
-        const b = document.getElementById('toastMsg');
-        
-        // 设置颜色
-        if (isError) {
-            t.classList.remove('bg-success');
-            t.classList.add('bg-danger');
-        } else {
-            t.classList.remove('bg-danger');
-            t.classList.add('bg-success');
-        }
-        
-        b.innerText = msg;
-        const toast = new bootstrap.Toast(t);
-        toast.show();
-    }
-
-    // 重写通用的 postApi，改用气泡提示
-    async function postApiToast(url, data) {
-        try {
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            });
-            const json = await res.json();
-            
-            if (json.status === 'ok') {
-                showToast(json.msg || '操作成功');
-                // 1秒后刷新页面
-                setTimeout(() => location.reload(), 1000);
-            } else {
-                showToast('失败: ' + (json.msg || '未知错误'), true);
-            }
-        } catch (e) {
-            showToast('网络请求失败', true);
-        }
-    }
+    const modal = new bootstrap.Modal(document.getElementById('editModal'));
 
     function openAdd() {
-        $('#edit_id').val(''); 
-        $('#edit_tg_id').val('').prop('disabled', false);
-        $('.dynamic-field').val(''); 
-        $('#edit_add_days').val('');
-        new bootstrap.Modal('#editModal').show();
+        document.getElementById('modalTitle').innerText = '添加用户';
+        $('#edit_id').val(''); $('#edit_tg_id').val('').prop('disabled', false);
+        $('.dynamic-field').val(''); $('#edit_add_days').val('');
+        modal.show();
     }
     
-    function openEdit(id, tgId, profile) {
-        $('#edit_id').val(id); 
-        $('#edit_tg_id').val(tgId).prop('disabled', true);
+    function openEdit(btn) {
+        document.getElementById('modalTitle').innerText = '编辑用户';
+        $('#edit_id').val(btn.getAttribute('data-id'));
+        $('#edit_tg_id').val(btn.getAttribute('data-tgid')).prop('disabled', true);
+        
+        let p = {};
+        try { p = JSON.parse(btn.getAttribute('data-profile')); } catch(e){}
         
         $('.dynamic-field').each(function() { 
             let k = $(this).data('key');
-            if(profile && profile[k]) $(this).val(profile[k]); 
+            if(p && p[k]) $(this).val(p[k]); 
         });
-        
         $('#edit_add_days').val(0);
-        new bootstrap.Modal('#editModal').show();
+        modal.show();
     }
     
     async function saveUser() {
-        let profile = {};
-        $('.dynamic-field').each(function() { profile[$(this).data('key')] = $(this).val(); });
-        await postApiToast('/core/api/save_user', {
+        if(!$('#edit_tg_id').val()) return showToast('请填写ID', 'danger');
+        let p = {};
+        $('.dynamic-field').each(function() { p[$(this).data('key')] = $(this).val(); });
+        await postApi('/core/api/save_user', {
             group_id: {{ group.id }}, tg_id: $('#edit_tg_id').val(),
-            profile: profile, add_days: $('#edit_add_days').val()
+            profile: p, add_days: $('#edit_add_days').val()
         });
     }
     
-    async function delUser(id) { 
-        if(confirm('确认删除?')) await postApiToast('/core/api/delete_user', {id: id}); 
-    }
-    
-    // ⚡️ 新增：推送功能
-    async function pushUser(id) {
-        if(confirm('确定要推送到频道吗？请确保【功能配置】中已填写频道ID，并将机器人拉入频道设为管理员。')) {
-            await postApiToast('/core/api/push_user', {id: id});
-        }
-    }
+    async function delUser(id) { if(confirm('确认删除?')) await postApi('/core/api/delete_user', {id: id}); }
+    async function pushUser(id) { if(confirm('确认推送到频道?')) await postApi('/core/api/push_user', {id: id}); }
 </script>
 {% endblock %}
