@@ -1,40 +1,80 @@
 {% extends "base.html" %}
 
-{% block full_content %}
+{% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8 col-lg-6">
         <div class="text-center my-5">
+            <div class="d-inline-flex align-items-center justify-content-center bg-primary bg-opacity-10 text-primary rounded-circle mb-3" style="width: 80px; height: 80px;">
+                <i class="fa-solid fa-robot fa-2x"></i>
+            </div>
             <h2 class="fw-bold text-dark">选择管理群组</h2>
-            <p class="text-muted">请选择您要配置的 Telegram 群组</p>
+            <p class="text-muted">请从下方列表选择要配置的 Telegram 群组</p>
         </div>
 
         {% if groups %}
-        <div class="list-group shadow-lg rounded-3 border-0">
+        <div class="list-group shadow rounded-3 border-0 overflow-hidden">
             {% for g in groups %}
-            <a href="/core/group/{{ g.id }}/dashboard" class="list-group-item list-group-item-action p-4 d-flex align-items-center justify-content-between border-bottom">
-                <div class="d-flex align-items-center">
-                    <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 50px; height: 50px;">
-                        <i class="fa-solid fa-users fa-lg"></i>
+            <div class="list-group-item p-4 d-flex align-items-center justify-content-between border-bottom">
+                <!-- 左侧：点击进入 -->
+                <a href="/core/group/{{ g.id }}/dashboard" class="d-flex align-items-center text-decoration-none flex-grow-1">
+                    <div class="bg-light rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 50px; height: 50px;">
+                        <i class="fa-solid fa-users text-primary"></i>
                     </div>
                     <div>
                         <h5 class="mb-0 fw-bold text-dark">{{ g.title }}</h5>
                         <small class="text-muted">ID: {{ g.chat_id }}</small>
                     </div>
+                </a>
+                
+                <!-- 右侧：操作区 -->
+                <div class="d-flex align-items-center gap-3">
+                    <!-- 状态标签 -->
+                    {% if g.is_active %}
+                        <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3">活跃</span>
+                    {% else %}
+                        <span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill px-3">停用</span>
+                    {% endif %}
+                    
+                    <!-- ⚡️ 删除按钮 -->
+                    <button class="btn btn-outline-danger btn-sm rounded-circle" style="width: 32px; height: 32px; padding: 0;" onclick="deleteGroup({{ g.id }}, '{{ g.title }}')" title="删除群组数据">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                    
+                    <!-- 进入箭头 -->
+                    <a href="/core/group/{{ g.id }}/dashboard" class="text-muted ps-2">
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </a>
                 </div>
-                <i class="fa-solid fa-chevron-right text-muted"></i>
-            </a>
+            </div>
             {% endfor %}
         </div>
         {% else %}
-        <div class="card shadow-lg border-0 text-center p-5">
-            <div class="mb-3">
-                <i class="fa-solid fa-ghost fa-3x text-muted opacity-50"></i>
+        <div class="card shadow-sm border-0 text-center p-5">
+            <div class="card-body">
+                <i class="fa-solid fa-inbox fa-3x text-muted opacity-25 mb-3"></i>
+                <h5 class="fw-bold">暂无群组</h5>
+                <p class="text-muted">请先将机器人拉入群组并设为管理员，然后刷新本页。</p>
+                <a href="/core/select_group" class="btn btn-primary px-4 rounded-pill mt-2">刷新列表</a>
             </div>
-            <h5 class="fw-bold">暂无群组</h5>
-            <p class="text-muted mb-4">请先将机器人拉入群组并设为管理员，然后刷新页面。</p>
-            <a href="/core/select_group" class="btn btn-primary w-50 mx-auto rounded-pill">刷新列表</a>
         </div>
         {% endif %}
+        
+        <div class="text-center mt-5">
+            <a href="https://t.me/BotFather" target="_blank" class="text-muted text-decoration-none small">
+                <i class="fa-regular fa-circle-question me-1"></i> 如何添加新的机器人？
+            </a>
+        </div>
     </div>
 </div>
+
+<script>
+    function deleteGroup(id, title) {
+        if (confirm(`⚠️ 危险操作\n\n确定要删除群组 "${title}" 的所有数据吗？\n包括所有用户资料和配置，且无法恢复！`)) {
+            postApi('/core/api/toggle_group', {
+                id: id,
+                action: 'delete'
+            });
+        }
+    }
+</script>
 {% endblock %}
