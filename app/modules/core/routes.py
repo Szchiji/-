@@ -7,33 +7,31 @@ import os, jwt, time, json, asyncio, re, requests, math
 from datetime import datetime, timedelta
 
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
+http = requests.Session()
 
 # 全局变量
 global_ptb_app = None
-global_bot_loop = None
 
 # --- Webhook 接收端点 ---
 @core_bp.route('/webhook', methods=['POST'])
 def webhook():
-    if not global_ptb_app:
-        return "Bot Not Ready", 503
+    """接收 Telegram 推送"""
+    if global_ptb_app is None:
+        return "Bot not initialized", 500
     
     try:
         json_data = request.get_json(force=True)
-        update = Update.de_json(json_data, global_ptb_app.bot)
-        
-        if global_bot_loop and global_bot_loop.is_running():
-            asyncio.run_coroutine_threadsafe(global_ptb_app.process_update(update), global_bot_loop)
-        else:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(global_ptb_app.process_update(update))
-            loop.close()
-            
+        asyncio.run(process_update_safe(json_data))
         return "OK", 200
     except Exception as e:
         print(f"❌ Webhook Error: {e}")
-        return "Error", 500
+        return "Error", 200
+
+async def process_update_safe(data):
+    """安全处理 Update"""
+    async with global_ptb_app:
+        update = Update.de_json(data, global_ptb_app.bot)
+        await global_ptb_app.process_update(update)
 
 # --- Context ---
 @core_bp.context_processor
@@ -45,8 +43,13 @@ def inject_context():
     if gid: data['current_group'] = BotGroup.query.get(gid)
     return data
 
-def safe_int(val, default=30):
-    try: return int(val) if str(val).strip() else default
+def safe_int(val, default=0):
+    """
+    安全转换整数，处理空字符串、None等情况
+    """
+    if val is None: return default
+    if isinstance(val, str) and val.strip() == '': return default
+    try: return int(val)
     except: return default
 
 def get_group_conf(group):
@@ -142,18 +145,25 @@ def api_save_user():
     d = request.json
     gid = d.get('group_id') or session.get('current_group_id')
     try:
-        tg_id = int(d.get('tg_id'))
+        # ⚡️ 修复点：使用 safe_int 处理空字符串
+        tg_id = safe_int(d.get('tg_id'))
+        if not tg_id:
+             return jsonify({"status": "err", "msg": "Telegram ID 不能为空"})
+             
         u = GroupUser.query.filter_by(group_id=gid, tg_id=tg_id).first()
         if not u:
             u = GroupUser(group_id=gid, tg_id=tg_id)
             db.session.add(u)
         u.profile_data = json.dumps(d.get('profile', {}), ensure_ascii=False)
-        days = int(d.get('add_days', 0))
+        
+        # ⚡️ 修复点：使用 safe_int 处理空字符串
+        days = safe_int(d.get('add_days', 0))
         if days:
             now = datetime.now()
             base = u.expiration_date if (u.expiration_date and u.expiration_date > now) else now
             u.expiration_date = base + timedelta(days=days)
             u.is_banned = False 
+        
         db.session.commit()
         return jsonify({"status": "ok"})
     except Exception as e: return jsonify({"status": "err", "msg": str(e)})
@@ -195,12 +205,13 @@ def api_toggle_group():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     group = BotGroup.query.get(request.json.get('id'))
     if group:
-        if request.json.get('action') == 'delete':
-             # ⚡️ 修复：先删除关联的用户，再删除群组
-             GroupUser.query.filter_by(group_id=group.id).delete()
-             db.session.delete(group)
+        action = request.json.get('action')
+        if action == 'delete':
+            # ⚡️ 级联删除：先删用户，再删群组
+            GroupUser.query.filter_by(group_id=group.id).delete()
+            db.session.delete(group)
         else:
-             group.is_active = request.json.get('active')
+            group.is_active = request.json.get('active')
         db.session.commit()
     return jsonify({"status": "ok"})
 
@@ -218,14 +229,42 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 🤖 机器人逻辑
+# 🤖 机器人逻辑 (初始化函数)
 # =======================
 
+async def run_bot():
+    """初始化机器人"""
+    global global_ptb_app
+    token = os.getenv('TOKEN')
+    
+    app_bot = Application.builder().token(token).build()
+    
+    app_bot.add_handler(CommandHandler("start", bot_start))
+    app_bot.add_handler(CallbackQueryHandler(pagination_callback))
+    app_bot.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
+    app_bot.add_handler(MessageHandler(filters.ALL, bot_handler))
+    
+    await app_bot.initialize()
+    await app_bot.start()
+    
+    global_ptb_app = app_bot
+    
+    domain = os.getenv('RAILWAY_PUBLIC_DOMAIN')
+    if domain:
+        url = f"https://{domain}/core/webhook"
+        print(f"🔗 设置 Webhook: {url}", flush=True)
+        await app_bot.bot.set_webhook(url)
+    else:
+        print("📡 本地模式: 启动 Polling...", flush=True)
+        await app_bot.updater.start_polling()
+        await asyncio.Event().wait()
+
+# --- 业务逻辑 ---
 def do_like(chat_id, message_id, emoji):
     token = os.getenv('TOKEN')
     try: 
         requests.post(f"https://api.telegram.org/bot{token}/setMessageReaction", 
-            json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": emoji}]}, timeout=(2, 2))
+            json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": emoji}]}, timeout=(3.05, 5))
     except: pass
 
 async def check_expiration_and_mute(context, group_id, user_id, chat_id, conf):
@@ -353,10 +392,8 @@ async def bot_handler(update: Update, context):
     msg = update.message or update.channel_post
     if not msg: return
     if msg.chat.type not in ['group', 'supergroup', 'channel']: return
-    
     g_info = await get_group_info_safe(update.effective_chat)
     if not g_info or not g_info['is_active']: return
-
     class Mock:
         def __init__(self, c, f): self.config=c; self.fields_config=f
     mock_g = Mock(g_info['config'], g_info['fields_config'])
@@ -373,8 +410,7 @@ async def bot_handler(update: Update, context):
             exists = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
             if exists:
                 do_like(msg.chat.id, msg.message_id, conf.get('like_emoji', '❤️'))
-                if conf.get('auto_mute_expired'): 
-                    await check_expiration_and_mute(context, gid, user.id, msg.chat.id, conf)
+                if conf.get('auto_mute_expired'): await check_expiration_and_mute(context, gid, user.id, msg.chat.id, conf)
 
     checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
     if text in checkin_cmds:
@@ -383,8 +419,7 @@ async def bot_handler(update: Update, context):
         with create_app().app_context():
             u = GroupUser.query.filter_by(group_id=gid, tg_id=int(user.id)).first()
             if not u: r = await msg.reply_html(conf.get('msg_not_registered'))
-            elif u.checkin_time and u.checkin_time.date() == datetime.now().date():
-                r = await msg.reply_html(conf.get('msg_repeat_checkin'))
+            elif u.checkin_time and u.checkin_time.date() == datetime.now().date(): r = await msg.reply_html(conf.get('msg_repeat_checkin'))
             else:
                 u.checkin_time = datetime.now()
                 u.online = True
@@ -437,38 +472,3 @@ async def pagination_callback(update: Update, context):
         await query.edit_message_text(text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
         await query.answer()
     except: await query.answer()
-
-# --- 🚀 统一入口：run_bot ---
-async def run_bot():
-    global global_ptb_app, global_bot_loop
-    
-    token = os.getenv('TOKEN')
-    app_bot = Application.builder().token(token).build()
-    
-    # 初始化全局变量
-    global_ptb_app = app_bot
-    global_bot_loop = asyncio.get_running_loop()
-    
-    app_bot.add_handler(CommandHandler("start", bot_start))
-    app_bot.add_handler(CallbackQueryHandler(pagination_callback))
-    app_bot.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
-    app_bot.add_handler(MessageHandler(filters.ALL, bot_handler))
-    
-    # 启动
-    domain = os.getenv('RAILWAY_PUBLIC_DOMAIN')
-    
-    await app_bot.initialize()
-    await app_bot.start()
-
-    if domain:
-        print(f"🌍 检测到域名: {domain}")
-        webhook_url = f"https://{domain}/core/webhook"
-        print(f"🔗 正在设置 Webhook: {webhook_url}")
-        await app_bot.bot.set_webhook(webhook_url)
-        print("✅ Webhook 设置成功！")
-        # Webhook 模式下不需要 polling，只需要保持 Event Loop 运行
-        await asyncio.Event().wait()
-    else:
-        print("📡 未检测到域名，使用 Polling 模式")
-        await app_bot.updater.start_polling()
-        await asyncio.Event().wait()
