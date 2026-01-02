@@ -2,7 +2,7 @@
 {% block content %}
 <div class="card shadow-sm border-0">
     <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-        <h6 class="m-0 fw-bold"><i class="fa-solid fa-users me-2"></i>用户列表 ({{ group.title }})</h6>
+        <h6 class="m-0 fw-bold"><i class="fa-solid fa-users me-2"></i>用户列表</h6>
         <div class="d-flex gap-2">
             <button class="btn btn-sm btn-primary fw-bold text-nowrap" onclick="openModal()">
                 <i class="fa-solid fa-plus"></i> 添加用户
@@ -10,20 +10,20 @@
         </div>
     </div>
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0 text-nowrap">
             <thead class="bg-light"><tr><th class="ps-4">ID</th><th>资料</th><th>有效期</th><th>状态</th><th class="text-end pe-4">操作</th></tr></thead>
             <tbody>
                 {% for u in users %}
                 <tr id="row_{{ u.id }}">
                     <td class="ps-4 fw-bold text-primary">{{ u.tg_id }}</td>
-                    <td>
+                    <td style="white-space: normal; min-width: 200px;">
                         {% set d = u.profile_data | from_json %}
                         {% for k, v in d.items() %}{% if v %}<span class="badge bg-light text-dark border me-1">{{ v }}</span>{% endif %}{% endfor %}
                     </td>
                     <td>
                         {% if u.expiration_date %}
                             <span class="small text-muted">{{ u.expiration_date.strftime('%Y-%m-%d') }}</span>
-                            {% if u.is_banned %}<span class="badge bg-danger">已禁言</span>{% endif %}
+                            {% if u.is_banned %}<span class="badge bg-danger">已禁</span>{% endif %}
                         {% else %}
                             <span class="badge bg-success">永久</span>
                         {% endif %}
@@ -41,29 +41,19 @@
     </div>
 </div>
 
-<!-- Modal -->
-<div class="modal fade" id="userModal" tabindex="-1">
+<div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered"><form class="modal-content" id="userForm" onsubmit="return false">
         <div class="modal-header bg-light"><h5 class="modal-title fw-bold">用户编辑</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <div class="mb-3">
                 <label class="small text-muted fw-bold">Telegram ID</label>
-                <input type="number" name="tg_id" class="form-control" required placeholder="请输入数字ID">
+                <input type="number" name="tg_id" class="form-control" required>
             </div>
-            
-            <!-- 动态字段区 -->
             <div id="modalFields" class="row g-2 mb-3"></div>
-            
             <hr>
-            
-            <!-- 🆕 有效期设置 -->
             <div class="mb-3">
-                <label class="small text-muted fw-bold text-success">增加有效期 (天)</label>
-                <input type="number" name="add_days" class="form-control" placeholder="0">
-                <div class="form-text small">
-                    输入天数以延长有效期。输入 0 或留空则不改变。<br>
-                    如果是新用户，0 表示永久有效。
-                </div>
+                <label class="small text-muted fw-bold text-success">有效期增加 (天)</label>
+                <input type="number" name="add_days" class="form-control" placeholder="0 = 不修改 / 永久">
             </div>
         </div>
         <div class="modal-footer"><button class="btn btn-primary w-100" onclick="saveUser()">保存</button></div>
@@ -102,7 +92,7 @@
         document.getElementById('userForm').reset(); 
         const inp = document.querySelector('[name=tg_id]');
         inp.value = tgid; 
-        inp.readOnly = true; // 编辑时锁定ID
+        inp.readOnly = true; 
         renderFields(userMap[uid] || {}); 
         myModal.show(); 
     }
