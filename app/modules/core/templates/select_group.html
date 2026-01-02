@@ -1,54 +1,59 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row mb-4">
-    <div class="col-12">
-        <h4 class="fw-bold">选择管理目标</h4>
-        <p class="text-muted">请选择一个群组或频道进入独立工作台。每个群组拥有独立的用户列表和配置。</p>
-    </div>
-</div>
-
-<div class="row g-4">
-    {% for g in groups %}
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100 shadow-sm border-0 hover-card cursor-pointer" onclick="location.href='/core/group/{{ g.id }}/dashboard'">
-            <div class="card-body p-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <span class="badge {{ 'bg-success' if g.is_active else 'bg-secondary' }}">{{ '运行中' if g.is_active else '未启用' }}</span>
-                    <div class="form-check form-switch" onclick="event.stopPropagation()">
-                        <input class="form-check-input" type="checkbox" onchange="toggleGroup({{ g.id }}, this.checked)" {{ 'checked' if g.is_active }}>
+<div class="container py-4">
+    <h3 class="fw-bold mb-4 text-center">选择管理的群组</h3>
+    <div class="row g-4 justify-content-center">
+        {% for g in groups %}
+        <div class="col-md-6 col-lg-4" id="card_{{ g.id }}">
+            <div class="card h-100 shadow-sm border-0 {{ 'bg-light' if not g.is_active else '' }}">
+                <div class="card-body text-center">
+                    <h5 class="card-title fw-bold text-truncate" title="{{ g.title }}">
+                        {% if not g.is_active %}
+                            <span class="badge bg-secondary me-1">停用</span>
+                        {% endif %}
+                        {{ g.title }}
+                    </h5>
+                    <p class="text-muted small mb-3">ID: {{ g.chat_id }}</p>
+                    <p class="text-muted small">上次活跃: {{ g.updated_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                    
+                    <div class="d-grid gap-2">
+                        <a href="/core/group/{{ g.id }}/dashboard" class="btn btn-primary fw-bold">进入管理</a>
+                        
+                        <div class="d-flex gap-2 justify-content-center">
+                            <button class="btn btn-sm btn-outline-danger w-100" onclick="deleteGroup({{ g.id }})">
+                                <i class="fa-solid fa-trash"></i> 删除记录
+                            </button>
+                        </div>
                     </div>
-                </div>
-                <h5 class="fw-bold text-truncate mb-1">{{ g.title }}</h5>
-                <p class="text-muted small mb-3">ID: {{ g.chat_id }}</p>
-                
-                <div class="d-flex justify-content-between align-items-center mt-4">
-                    <span class="small text-muted">
-                        {% if g.type == 'channel' %}<i class="fa-solid fa-bullhorn me-1"></i> 频道
-                        {% else %}<i class="fa-solid fa-users me-1"></i> 群组{% endif %}
-                    </span>
-                    <button class="btn btn-primary btn-sm rounded-pill px-3">进入管理 <i class="fa-solid fa-arrow-right ms-1"></i></button>
                 </div>
             </div>
         </div>
+        {% else %}
+        <div class="col-12 text-center text-muted">
+            <div class="py-5">
+                <i class="fa-brands fa-telegram fa-3x mb-3"></i>
+                <p>暂无群组，请将机器人拉入群组并设为管理员</p>
+            </div>
+        </div>
+        {% endfor %}
     </div>
-    {% else %}
-    <div class="col-12 text-center py-5 text-muted">
-        <i class="fa-solid fa-robot fa-3x mb-3"></i>
-        <p>暂无群组。请将机器人拉入群组并发送任意消息。</p>
-    </div>
-    {% endfor %}
 </div>
 
 <script>
-    function toggleGroup(id, active) {
+    function deleteGroup(gid) {
+        if(!confirm('确定要在后台删除这个群组吗？\n如果机器人还在群里，下次说话时它会重新出现。')) return;
+        
         fetch('/core/api/toggle_group', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({id: id, active: active})
+            body: JSON.stringify({id: gid, action: 'delete'})
+        }).then(res => res.json()).then(data => {
+            if(data.status === 'ok') {
+                document.getElementById('card_' + gid).remove();
+            } else {
+                alert('操作失败');
+            }
         });
     }
 </script>
-<style>
-    .hover-card:hover { transform: translateY(-3px); transition: 0.3s; box-shadow: 0 10px 20px rgba(0,0,0,0.08) !important; }
-</style>
 {% endblock %}
