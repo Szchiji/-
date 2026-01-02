@@ -1,55 +1,71 @@
 {% extends "base.html" %}
+
 {% block content %}
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card bg-primary text-white shadow-sm border-0">
-            <div class="card-body p-4 d-flex justify-content-between align-items-center">
-                <div>
-                    <h4 class="fw-bold mb-1">{{ group.title }}</h4>
-                    <p class="mb-0 opacity-75">ID: {{ group.chat_id }} | 类型: {{ group.type }}</p>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="fw-bold mb-1">仪表盘</h4>
+        <p class="text-muted mb-0">查看 {{ current_group.title }} 的实时数据</p>
+    </div>
+    <span class="badge bg-success bg-opacity-10 text-success px-3 py-2 rounded-pill">
+        <i class="fa-solid fa-circle fa-xs me-1"></i> 运行正常
+    </span>
+</div>
+
+<div class="row g-4">
+    <!-- 总用户卡片 -->
+    <div class="col-md-6 col-lg-6">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="mb-2 text-muted text-uppercase fw-bold" style="font-size: 0.8rem;">
+                    <i class="fa-solid fa-user-group me-1"></i> 总认证用户
                 </div>
-                <div>
-                    <span class="badge bg-white text-primary fs-6">{{ stats.users }} 用户</span>
-                    <span class="badge bg-success bg-opacity-25 border border-success text-white ms-2 fs-6">{{ stats.online }} 在线</span>
+                <div class="stat-num">{{ stats.users }}</div>
+                <div class="text-muted small">位已录入资料</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 今日打卡卡片 -->
+    <div class="col-md-6 col-lg-6">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="mb-2 text-muted text-uppercase fw-bold" style="font-size: 0.8rem;">
+                    <i class="fa-solid fa-clock me-1"></i> 今日打卡
+                </div>
+                <div class="stat-num" style="background: linear-gradient(45deg, #34C759, #30B0C7); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                    {{ stats.online }}
+                </div>
+                <div class="text-muted small">位用户今日活跃</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 快捷入口 -->
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="fa-solid fa-bolt text-warning me-2"></i>快捷操作
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <a href="/core/group/{{ current_group.id }}/users" class="btn btn-light w-100 py-3 d-flex align-items-center justify-content-center gap-2">
+                            <i class="fa-solid fa-plus-circle text-primary"></i> 添加新用户
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a href="/core/group/{{ current_group.id }}/settings" class="btn btn-light w-100 py-3 d-flex align-items-center justify-content-center gap-2">
+                            <i class="fa-solid fa-gear text-secondary"></i> 修改设置
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a href="https://t.me/" target="_blank" class="btn btn-light w-100 py-3 d-flex align-items-center justify-content-center gap-2">
+                            <i class="fa-brands fa-telegram text-info"></i> 打开 Telegram
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
-
-<div class="row g-4">
-    <!-- 快捷入口卡片 -->
-    <div class="col-md-4">
-        <a href="/core/group/{{ group.id }}/users" class="card h-100 shadow-sm border-0 text-decoration-none hover-card">
-            <div class="card-body text-center p-5">
-                <i class="fa-solid fa-users fa-3x text-primary mb-3"></i>
-                <h5 class="fw-bold text-dark">用户管理</h5>
-                <p class="text-muted small">添加、修改、删除本群的认证用户</p>
-            </div>
-        </a>
-    </div>
-    <div class="col-md-4">
-        <a href="/core/group/{{ group.id }}/settings" class="card h-100 shadow-sm border-0 text-decoration-none hover-card">
-            <div class="card-body text-center p-5">
-                <i class="fa-solid fa-gear fa-3x text-success mb-3"></i>
-                <h5 class="fw-bold text-dark">功能设置</h5>
-                <p class="text-muted small">配置打卡指令、欢迎语、自动回复</p>
-            </div>
-        </a>
-    </div>
-    <div class="col-md-4">
-        <a href="/core/group/{{ group.id }}/fields" class="card h-100 shadow-sm border-0 text-decoration-none hover-card">
-            <div class="card-body text-center p-5">
-                <i class="fa-solid fa-list-check fa-3x text-warning mb-3"></i>
-                <h5 class="fw-bold text-dark">字段配置</h5>
-                <p class="text-muted small">定义本群用户的资料字段 (如身高/地区)</p>
-            </div>
-        </a>
-    </div>
-</div>
-
-<style>
-    .hover-card { transition: 0.3s; }
-    .hover-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important; }
-</style>
 {% endblock %}
