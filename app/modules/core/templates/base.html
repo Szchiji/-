@@ -2,57 +2,74 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bot Admin</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <!-- Bootstrap 4 (最稳的老版本) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        :root { --primary-color: #4e73df; --bg-color: #f8f9fc; }
-        body { background-color: var(--bg-color); font-family: 'Segoe UI', Roboto, sans-serif; color: #5a5c69; }
-        .sidebar { width: 250px; background: white; position: fixed; top: 0; left: 0; height: 100vh; border-right: 1px solid #e3e6f0; z-index: 1000; }
-        .sidebar-brand { height: 70px; display: flex; align-items: center; padding: 0 1.5rem; font-weight: 800; font-size: 1.2rem; color: #4e73df; border-bottom: 1px solid #e3e6f0; }
-        .nav-link { color: #5a5c69; padding: 1rem 1.5rem; font-weight: 600; display: flex; align-items: center; text-decoration: none; transition: 0.2s; }
-        .nav-link:hover { background: #f8f9fc; color: #4e73df; }
-        .nav-link.active { color: #4e73df; background: #f0f4ff; border-right: 4px solid #4e73df; }
-        .main-wrapper { margin-left: 250px; min-height: 100vh; display: flex; flex-direction: column; }
-        .topbar { height: 70px; background: white; border-bottom: 1px solid #e3e6f0; display: flex; align-items: center; justify-content: flex-end; padding: 0 2rem; }
-        .content { padding: 2rem; }
-        .fullscreen-container { width: 100%; min-height: 100vh; display: flex; flex-direction: column; }
-        .navbar-simple { height: 70px; background: white; box-shadow: 0 .15rem 1.75rem 0 rgba(58,59,69,.15); padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; }
-        @media (max-width: 768px) { .sidebar { display: none; } .main-wrapper { margin-left: 0; } }
+        body { font-size: .875rem; }
+        .sidebar { position: fixed; top: 0; bottom: 0; left: 0; z-index: 100; padding: 48px 0 0; box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1); }
+        .sidebar-sticky { position: relative; top: 0; height: calc(100vh - 48px); padding-top: .5rem; overflow-x: hidden; overflow-y: auto; }
+        .navbar-brand { padding-top: .75rem; padding-bottom: .75rem; font-size: 1rem; background-color: rgba(0, 0, 0, .25); box-shadow: inset -1px 0 0 rgba(0, 0, 0, .25); }
+        .navbar .navbar-toggler { top: .25rem; right: 1rem; }
+        [role="main"] { padding-top: 133px; }
+        @media (min-width: 768px) { [role="main"] { padding-top: 48px; } }
     </style>
 </head>
 <body>
-    <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1100;">
-      <div id="liveToast" class="toast align-items-center border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
-        <div class="d-flex">
-          <div class="toast-body fw-bold" id="toastMessage"></div>
-          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    <nav class="navbar navbar-dark fixed-top bg-dark flex-md-nowrap p-0 shadow">
+        <a class="navbar-brand col-md-3 col-lg-2 mr-0 px-3" href="#">Bot Admin</a>
+        <button class="navbar-toggler position-absolute d-md-none collapsed" type="button" data-toggle="collapse" data-target="#sidebarMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <ul class="navbar-nav px-3">
+            <li class="nav-item text-nowrap">
+                {% if session.get('logged_in') %}
+                <a class="nav-link" href="/core/logout">退出登录</a>
+                {% endif %}
+            </li>
+        </ul>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            {% if session.get('logged_in') and page != 'login' %}
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
+                <div class="sidebar-sticky pt-3">
+                    <ul class="nav flex-column">
+                        {% if current_group %}
+                        <li class="nav-item px-3 text-muted">当前: {{ current_group.title }}</li>
+                        <li class="nav-item"><a class="nav-link {% if page=='dashboard' %}active{% endif %}" href="/core/group/{{ current_group.id }}/dashboard"><i class="fas fa-home"></i> 仪表盘</a></li>
+                        <li class="nav-item"><a class="nav-link {% if page=='users' %}active{% endif %}" href="/core/group/{{ current_group.id }}/users"><i class="fas fa-users"></i> 用户管理</a></li>
+                        <li class="nav-item"><a class="nav-link {% if page=='fields' %}active{% endif %}" href="/core/group/{{ current_group.id }}/fields"><i class="fas fa-list"></i> 字段配置</a></li>
+                        <li class="nav-item"><a class="nav-link {% if page=='settings' %}active{% endif %}" href="/core/group/{{ current_group.id }}/settings"><i class="fas fa-cog"></i> 功能设置</a></li>
+                        <div class="dropdown-divider"></div>
+                        {% endif %}
+                        <li class="nav-item"><a class="nav-link" href="/core/select_group"><i class="fas fa-exchange-alt"></i> 切换群组</a></li>
+                    </ul>
+                </div>
+            </nav>
+            {% endif %}
+
+            <main role="main" class="col-md-9 ml-sm-auto col-lg-10 px-md-4">
+                <br>
+                {% block content %}{% endblock %}
+            </main>
         </div>
-      </div>
     </div>
-    
-    <!-- ⚠️ 注意：这里只有一个 block body，绝不要在这里写侧边栏代码 -->
-    {% block body %}{% endblock %}
-    
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        function showToast(msg, type='success') {
-            const el = document.getElementById('liveToast');
-            document.getElementById('toastMessage').innerText = msg;
-            el.className = `toast align-items-center text-white bg-${type} border-0 shadow-lg`;
-            new bootstrap.Toast(el, { delay: 2500 }).show();
-        }
         async function postApi(url, data) {
             try {
-                const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
-                const j = await r.json();
-                if(j.status === 'ok') { showToast(j.msg || '✅ 操作成功', 'success'); setTimeout(() => location.reload(), 1000); } 
-                else { showToast(j.msg || '❌ 操作失败', 'danger'); }
-            } catch(e) { showToast('❌ 网络错误', 'danger'); }
+                let r = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+                let j = await r.json();
+                if(j.status=='ok'){ alert('成功'); location.reload(); }
+                else { alert('失败: '+j.msg); }
+            } catch(e){ alert('网络错误'); }
         }
     </script>
-    {% block scripts %}{% endblock %}
 </body>
 </html>
