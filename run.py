@@ -10,73 +10,69 @@ app = create_app()
 
 def fix_database_schema(app):
     """
-    自动检测并修复缺失的数据库列
+    后台线程：慢慢修复数据库，绝不卡主进程
     """
+    # 延迟 3 秒执行，给主进程一点喘息时间
+    time.sleep(3)
     with app.app_context():
-        # 增加容错，避免数据库未准备好导致崩溃
         try:
+            # 1. 确保表存在
             db.create_all()
             
-            # 修复 BotGroup 表
-            try:
-                with db.engine.connect() as conn:
-                    conn.execute(text("SELECT last_query_msg_id FROM bot_groups LIMIT 1"))
-            except:
-                print("🔧 补全 bot_groups.last_query_msg_id", flush=True)
-                with db.engine.connect() as conn:
+            # 2. 尝试补全字段 (使用独立连接)
+            with db.engine.connect() as conn:
+                # 修复 bot_groups
+                try: 
                     conn.execute(text("ALTER TABLE bot_groups ADD COLUMN last_query_msg_id INTEGER"))
-                    conn.commit()
-
-            # 修复 GroupUser 表 (新增有效期和禁言字段)
-            try:
-                with db.engine.connect() as conn:
-                    conn.execute(text("SELECT expiration_date FROM group_users LIMIT 1"))
-            except:
-                print("🔧 补全 group_users.expiration_date", flush=True)
-                with db.engine.connect() as conn:
+                except: pass
+                
+                # 修复 group_users
+                try: 
                     conn.execute(text("ALTER TABLE group_users ADD COLUMN expiration_date TIMESTAMP"))
-                    conn.commit()
-
-            try:
-                with db.engine.connect() as conn:
-                    conn.execute(text("SELECT is_banned FROM group_users LIMIT 1"))
-            except:
-                print("🔧 补全 group_users.is_banned", flush=True)
-                with db.engine.connect() as conn:
+                except: pass
+                
+                try: 
                     conn.execute(text("ALTER TABLE group_users ADD COLUMN is_banned BOOLEAN DEFAULT FALSE"))
-                    conn.commit()
-            
-            print("✅ 数据库检查完成", flush=True)
+                except: pass
+                
+                conn.commit()
+            print("✅ [后台] 数据库结构检查完成", flush=True)
         except Exception as e:
-            print(f"⚠️ 数据库连接警告: {e}", flush=True)
+            print(f"⚠️ [后台] 数据库检查跳过: {e}", flush=True)
 
 def run_flask():
+    """
+    启动 Web 服务 (Railway 健康检查必需)
+    """
     port = int(os.getenv('PORT', 5000))
-    # 打印日志证明 Web 服务尝试启动
-    print(f"🌍 Web 服务正在端口 {port} 启动...", flush=True)
+    # use_reloader=False 防止在容器中启动两次
     app.run(host='0.0.0.0', port=port, use_reloader=False)
 
 def start_bot_loop():
-    # 稍微延迟几秒启动机器人，给 Web 服务让路
-    time.sleep(3)
+    """
+    启动机器人
+    """
+    # 延迟 5 秒启动机器人，优先让 Flask 跑起来
+    time.sleep(5)
     from app.modules.core.routes import run_bot
+    
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     print("🤖 机器人正在启动...", flush=True)
     loop.run_until_complete(run_bot())
 
 if __name__ == '__main__':
-    # 1. 优先启动 Flask (Web)，确保 Railway 能通过健康检查
+    print("🚀 系统启动中...", flush=True)
+
+    # 1. 最优先：启动 Flask (为了通过 Railway 健康检查)
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
-    # 2. 然后再处理数据库修复
-    try:
-        fix_database_schema(app)
-    except Exception as e:
-        print(f"❌ 数据库修复失败: {e}", flush=True)
-
-    # 3. 最后启动机器人
+    # 2. 次优先：启动数据库修复 (后台默默跑)
+    db_thread = threading.Thread(target=fix_database_schema, args=(app,), daemon=True)
+    db_thread.start()
+    
+    # 3. 最后：启动机器人 (主线程阻塞)
     try:
         start_bot_loop()
     except KeyboardInterrupt:
