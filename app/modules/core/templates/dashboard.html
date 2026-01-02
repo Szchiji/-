@@ -1,34 +1,51 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">数据概览</h1>
-</div>
-
-<div class="row">
-    <div class="col-md-4">
-        <div class="card text-white bg-primary mb-3">
-            <div class="card-header">总认证用户</div>
-            <div class="card-body">
-                <h1 class="card-title">{{ stats.users }}</h1>
+<h4 class="fw-bold mb-4">数据概览</h4>
+        
+<div class="row g-4">
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100 border-0 shadow-sm border-start border-4 border-primary p-3">
+            <div class="d-flex align-items-center">
+                <div class="flex-grow-1">
+                    <div class="text-muted small fw-bold text-uppercase mb-1">总认证用户</div>
+                    <div class="h3 mb-0 fw-bold text-dark">{{ stats.users }}</div>
+                </div>
+                <i class="fa-solid fa-users fa-2x text-gray-300 opacity-25"></i>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card text-white bg-success mb-3">
-            <div class="card-header">今日活跃 (已打卡)</div>
-            <div class="card-body">
-                <h1 class="card-title">{{ stats.online }}</h1>
+    
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100 border-0 shadow-sm border-start border-4 border-success p-3">
+            <div class="d-flex align-items-center">
+                <div class="flex-grow-1">
+                    <div class="text-muted small fw-bold text-uppercase mb-1">今日活跃</div>
+                    <div class="h3 mb-0 fw-bold text-dark">{{ stats.online }}</div>
+                </div>
+                <i class="fa-solid fa-clock fa-2x text-gray-300 opacity-25"></i>
             </div>
         </div>
     </div>
 </div>
 
-<div class="mt-4">
-    <h4>快捷入口</h4>
-    <div class="btn-group">
-        <a href="/core/group/{{ group.id }}/users" class="btn btn-outline-primary">管理用户</a>
-        <a href="/core/group/{{ group.id }}/settings" class="btn btn-outline-secondary">修改配置</a>
+<div class="card border-0 shadow-sm mt-4">
+    <div class="card-header bg-white py-3">
+        <h6 class="m-0 fw-bold text-primary">快捷入口</h6>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <a href="/core/group/{{ group.id }}/users" class="btn btn-light w-100 py-3 border text-primary fw-bold">
+                    <i class="fa-solid fa-plus-circle me-2"></i> 管理用户
+                </a>
+            </div>
+            <div class="col-md-6">
+                <a href="/core/group/{{ group.id }}/settings" class="btn btn-light w-100 py-3 border text-dark fw-bold">
+                    <i class="fa-solid fa-gear me-2"></i> 修改配置
+                </a>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
