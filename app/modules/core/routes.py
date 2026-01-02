@@ -7,10 +7,36 @@ import os, jwt, time, json, asyncio, re, requests, math
 from datetime import datetime, timedelta
 
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
-http = requests.Session()
 
-# 全局机器人应用实例
-ptb_app = None
+# 全局变量
+global_ptb_app = None
+global_bot_loop = None
+
+# --- Webhook 接收端点 ---
+@core_bp.route('/webhook', methods=['POST'])
+def webhook():
+    if not global_ptb_app:
+        return "Bot Not Ready", 503
+    
+    try:
+        json_data = request.get_json(force=True)
+        update = Update.de_json(json_data, global_ptb_app.bot)
+        
+        # 核心修复：使用全局 Loop 还是新 Loop？
+        # 在 Flask 线程中，我们需要将协程提交给 Bot 运行的 Loop
+        if global_bot_loop and global_bot_loop.is_running():
+            asyncio.run_coroutine_threadsafe(global_ptb_app.process_update(update), global_bot_loop)
+        else:
+            # 如果 Bot Loop 没在跑 (极少情况)，我们尝试临时运行
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(global_ptb_app.process_update(update))
+            loop.close()
+            
+        return "OK", 200
+    except Exception as e:
+        print(f"❌ Webhook Error: {e}")
+        return "Error", 500
 
 # --- Context ---
 @core_bp.context_processor
@@ -43,7 +69,7 @@ def get_group_fields(group):
         except: pass
     return DEFAULT_FIELDS
 
-# --- Web Routes (保持不变) ---
+# --- Web Routes ---
 @core_bp.route('/')
 def index(): return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
 
@@ -88,7 +114,7 @@ def page_settings(gid):
     fields = get_group_fields(group)
     return render_template('settings.html', page='settings', group=group, conf=conf, fields=fields)
 
-# --- APIs (保持不变) ---
+# --- APIs ---
 @core_bp.route('/api/save_settings', methods=['POST'])
 def api_save_settings():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
@@ -172,10 +198,8 @@ def api_toggle_group():
     if not session.get('logged_in'): return jsonify({"status":"err"}), 403
     group = BotGroup.query.get(request.json.get('id'))
     if group:
-        if request.json.get('action') == 'delete':
-             db.session.delete(group)
-        else:
-             group.is_active = request.json.get('active')
+        if request.json.get('action') == 'delete': db.session.delete(group)
+        else: group.is_active = request.json.get('active')
         db.session.commit()
     return jsonify({"status": "ok"})
 
@@ -193,72 +217,14 @@ def magic_login():
 def logout(): session.clear(); return redirect('/core')
 
 # =======================
-# 📡 Webhook 路由 (修复版)
+# 🤖 机器人逻辑
 # =======================
-
-@core_bp.route('/webhook', methods=['POST'])
-def telegram_webhook():
-    if ptb_app is None:
-        return "Bot not initialized", 500
-    
-    update_json = request.get_json(force=True)
-    
-    # ⚡️ 修复点：使用 asyncio.run() 自动管理 Event Loop
-    try:
-        asyncio.run(process_update_safe(update_json))
-    except Exception as e:
-        print(f"❌ Webhook Error: {e}")
-        # 这里返回 200 很重要，否则 Telegram 会一直重试导致刷屏
-        return "Error", 200
-        
-    return "OK"
-
-async def process_update_safe(data):
-    """
-    在一个全新的 Loop 中处理 update，并在结束后正确关闭
-    """
-    # 必须每次重新初始化 Update 对象，因为它是绑定到 Bot 实例的
-    async with ptb_app:
-        update = Update.de_json(data, ptb_app.bot)
-        await ptb_app.process_update(update)
-
-# =======================
-# 🤖 机器人初始化
-# =======================
-
-async def init_webhook_bot(webhook_domain):
-    global ptb_app
-    token = os.getenv('TOKEN')
-    print("🤖 正在构建机器人应用...", flush=True)
-    
-    # 构建应用
-    ptb_app = Application.builder().token(token).build()
-    
-    # 注册处理器
-    ptb_app.add_handler(CommandHandler("start", bot_start))
-    ptb_app.add_handler(CallbackQueryHandler(pagination_callback))
-    ptb_app.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
-    ptb_app.add_handler(MessageHandler(filters.ALL, bot_handler))
-    
-    # 初始化
-    await ptb_app.initialize()
-    await ptb_app.start()
-
-    # 设置 Webhook
-    webhook_url = f"https://{webhook_domain}/core/webhook"
-    print(f"🔗 正在设置 Webhook: {webhook_url}", flush=True)
-    await ptb_app.bot.set_webhook(webhook_url)
-    print("✅ Webhook 设置成功！", flush=True)
-    
-    return ptb_app
-
-# --- 业务逻辑 (保持不变) ---
 
 def do_like(chat_id, message_id, emoji):
     token = os.getenv('TOKEN')
     try: 
         requests.post(f"https://api.telegram.org/bot{token}/setMessageReaction", 
-            json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": emoji}]}, timeout=(3.05, 5))
+            json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": emoji}]}, timeout=(2, 2))
     except: pass
 
 async def check_expiration_and_mute(context, group_id, user_id, chat_id, conf):
@@ -396,7 +362,6 @@ async def bot_handler(update: Update, context):
     conf = get_group_conf(mock_g)
     fields = get_group_fields(mock_g)
     gid = g_info['id']
-    
     if not update.effective_user: return
     user = update.effective_user
     text = msg.text.strip() if msg.text else ""
@@ -471,3 +436,38 @@ async def pagination_callback(update: Update, context):
         await query.edit_message_text(text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
         await query.answer()
     except: await query.answer()
+
+# --- 🚀 统一入口：run_bot ---
+async def run_bot():
+    global global_ptb_app, global_bot_loop
+    
+    token = os.getenv('TOKEN')
+    app_bot = Application.builder().token(token).build()
+    
+    # 初始化全局变量
+    global_ptb_app = app_bot
+    global_bot_loop = asyncio.get_running_loop()
+    
+    app_bot.add_handler(CommandHandler("start", bot_start))
+    app_bot.add_handler(CallbackQueryHandler(pagination_callback))
+    app_bot.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
+    app_bot.add_handler(MessageHandler(filters.ALL, bot_handler))
+    
+    # 启动
+    domain = os.getenv('RAILWAY_PUBLIC_DOMAIN')
+    
+    await app_bot.initialize()
+    await app_bot.start()
+
+    if domain:
+        print(f"🌍 检测到域名: {domain}")
+        webhook_url = f"https://{domain}/core/webhook"
+        print(f"🔗 正在设置 Webhook: {webhook_url}")
+        await app_bot.bot.set_webhook(webhook_url)
+        print("✅ Webhook 设置成功！")
+        # Webhook 模式下不需要 polling，只需要保持 Event Loop 运行
+        await asyncio.Event().wait()
+    else:
+        print("📡 未检测到域名，使用 Polling 模式")
+        await app_bot.updater.start_polling()
+        await asyncio.Event().wait()
