@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block body %}
+<!-- 左侧侧边栏 -->
+<nav class="sidebar">
+    <div class="sidebar-brand">
+        <i class="fa-solid fa-robot me-2"></i> Bot Admin
+    </div>
+    
+    <div class="nav flex-column py-3 px-2">
+        <div class="px-3 mb-2 text-xs fw-bold text-muted text-uppercase" style="font-size: 0.75rem;">
+            当前群组
+        </div>
+        <div class="px-3 mb-3 fw-bold text-truncate" title="{{ current_group.title }}">
+            {{ current_group.title }}
+        </div>
+        
+        <a href="/core/group/{{ current_group.id }}/dashboard" class="nav-link {% if page=='dashboard' %}active{% endif %}">
+            <i class="fa-solid fa-chart-pie"></i> 仪表盘
+        </a>
+        <a href="/core/group/{{ current_group.id }}/users" class="nav-link {% if page=='users' %}active{% endif %}">
+            <i class="fa-solid fa-users"></i> 用户管理
+        </a>
+        <a href="/core/group/{{ current_group.id }}/fields" class="nav-link {% if page=='fields' %}active{% endif %}">
+            <i class="fa-solid fa-list-check"></i> 资料字段
+        </a>
+        <a href="/core/group/{{ current_group.id }}/settings" class="nav-link {% if page=='settings' %}active{% endif %}">
+            <i class="fa-solid fa-sliders"></i> 功能配置
+        </a>
+        
+        <hr class="mx-3 my-3 text-muted opacity-25">
+        
+        <a href="/core/select_group" class="nav-link text-dark">
+            <i class="fa-solid fa-exchange-alt"></i> 切换群组
+        </a>
+        <a href="/core/logout" class="nav-link text-danger">
+            <i class="fa-solid fa-right-from-bracket"></i> 退出登录
+        </a>
+    </div>
+</nav>
+
+<!-- 右侧主内容区 -->
+<div class="main-wrapper">
+    <!-- 顶部栏 -->
+    <header class="topbar">
+        <div class="d-flex align-items-center">
+            <!-- 手机端菜单开关 (预留) -->
+            <i class="fa-solid fa-bars d-md-none me-3 text-muted cursor-pointer"></i>
+            <h5 class="mb-0 fw-bold text-dark">
+                {% if page=='dashboard' %}数据概览{% endif %}
+                {% if page=='users' %}用户管理{% endif %}
+                {% if page=='fields' %}字段配置{% endif %}
+                {% if page=='settings' %}功能设置{% endif %}
+            </h5>
+        </div>
+        
+        <div class="d-flex align-items-center">
+            <a href="https://t.me/{{ current_group.username }}" target="_blank" class="btn btn-sm btn-light text-primary me-2">
+                <i class="fa-brands fa-telegram"></i> 打开群组
+            </a>
+        </div>
+    </header>
+    
+    <!-- 具体页面内容 -->
+    <div class="content">
+        {% block content %}{% endblock %}
+    </div>
+</div>
+{% endblock %}
