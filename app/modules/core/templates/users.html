@@ -150,7 +150,6 @@
             profile = JSON.parse(btn.dataset.profile);
         } catch (e) {
             console.error('Failed to parse profile data:', e);
-            profile = {};
         }
         
         // Reset form first
@@ -170,7 +169,7 @@
         // Populate profile fields
         document.querySelectorAll('.profile-input').forEach(input => {
             const fieldName = input.name;
-            if (profile[fieldName]) {
+            if (fieldName in profile) {
                 input.value = profile[fieldName];
             }
         });
