@@ -29,6 +29,16 @@ class GroupUser(db.Model):
     # Relationship to BotGroup for efficient querying
     group = db.relationship('BotGroup', backref='users', lazy=True)
 
+class AuthSession(db.Model):
+    __tablename__ = 'auth_sessions'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.BigInteger, index=True)
+    session_token = db.Column(db.String(100), unique=True, index=True)
+    verification_code = db.Column(db.String(10))
+    is_verified = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    expires_at = db.Column(db.DateTime)
+
 DEFAULT_FIELDS = [
     {"key": "name", "label": "昵称", "type": "text"},
     {"key": "region", "label": "地区", "type": "select", "options": ["福田","南山"]},
