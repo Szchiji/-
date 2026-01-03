@@ -1,15 +1,85 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="fw-bold m-0">字段配置 ({{ group.title }})</h4>
-    <button class="btn btn-primary fw-bold px-4" onclick="saveFields()"><i class="fa-solid fa-save me-2"></i>保存</button>
+<style>
+    .page-header-fields {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 15px;
+        margin-bottom: 2rem;
+        box-shadow: 0 10px 30px rgba(240, 147, 251, 0.3);
+    }
+    
+    .field-item {
+        background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
+        border: 2px solid #e0e0e0;
+        border-radius: 15px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        transition: all 0.3s ease;
+        animation: slideIn 0.5s ease-out;
+    }
+    
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateX(-30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+    
+    .field-item:hover {
+        border-color: #f093fb;
+        box-shadow: 0 8px 20px rgba(240, 147, 251, 0.2);
+        transform: translateX(5px);
+    }
+    
+    .add-field-btn {
+        border: 2px dashed #f093fb;
+        background: transparent;
+        color: #f093fb;
+        padding: 1.5rem;
+        border-radius: 15px;
+        transition: all 0.3s ease;
+        font-weight: 600;
+    }
+    
+    .add-field-btn:hover {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        border-color: transparent;
+        transform: scale(1.02);
+    }
+    
+    .delete-field-btn {
+        transition: all 0.3s ease;
+    }
+    
+    .delete-field-btn:hover {
+        transform: rotate(90deg) scale(1.2);
+    }
+</style>
+
+<div class="page-header-fields">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h4 class="fw-bold mb-1"><i class="fa-solid fa-list-check me-2"></i>字段配置</h4>
+            <p class="mb-0 opacity-75">{{ group.title }} - 自定义用户资料字段</p>
+        </div>
+        <button class="btn btn-light fw-bold px-4" onclick="saveFields()">
+            <i class="fa-solid fa-save me-2"></i>保存配置
+        </button>
+    </div>
 </div>
 
-<div class="card shadow-sm border-0">
-    <div class="card-body">
+<div class="card shadow-sm border-0" style="border-radius: 15px;">
+    <div class="card-body p-4">
         <div id="fields-con"></div>
-        <button class="btn btn-outline-primary w-100 mt-3 border-2 border-dashed" onclick="addField()">
-            <i class="fa-solid fa-plus me-1"></i> 添加新字段
+        <button class="add-field-btn w-100 btn mt-3" onclick="addField()">
+            <i class="fa-solid fa-plus-circle me-2"></i>添加新字段
         </button>
     </div>
 </div>
@@ -22,27 +92,40 @@
         container.innerHTML = '';
         fields.forEach((f, i) => {
             container.innerHTML += `
-            <div class="row g-2 align-items-center mb-3 bg-light p-3 rounded border">
+            <div class="field-item row g-3 align-items-center">
                 <div class="col-md-3">
-                    <label class="small text-muted">字段名 (key)</label>
-                    <input class="form-control form-control-sm" value="${f.key}" oninput="fields[${i}].key=this.value" placeholder="英文,如 region">
+                    <label class="small text-muted fw-bold">
+                        <i class="fa-solid fa-key me-1"></i>字段名 (key)
+                    </label>
+                    <input class="form-control" value="${f.key}" oninput="fields[${i}].key=this.value" placeholder="例: region">
                 </div>
                 <div class="col-md-3">
-                    <label class="small text-muted">显示名 (label)</label>
-                    <input class="form-control form-control-sm" value="${f.label}" oninput="fields[${i}].label=this.value" placeholder="中文,如 地区">
+                    <label class="small text-muted fw-bold">
+                        <i class="fa-solid fa-tag me-1"></i>显示名 (label)
+                    </label>
+                    <input class="form-control" value="${f.label}" oninput="fields[${i}].label=this.value" placeholder="例: 地区">
                 </div>
-                <div class="col-md-3">
-                    <label class="small text-muted">类型</label>
-                    <select class="form-select form-select-sm" onchange="fields[${i}].type=this.value; render()">
+                <div class="col-md-2">
+                    <label class="small text-muted fw-bold">
+                        <i class="fa-solid fa-list me-1"></i>类型
+                    </label>
+                    <select class="form-select" onchange="fields[${i}].type=this.value; render()">
                         <option value="text" ${f.type=='text'?'selected':''}>文本</option>
                         <option value="select" ${f.type=='select'?'selected':''}>下拉菜单</option>
                     </select>
                 </div>
-                <div class="col-md-2">
-                    ${f.type==='select' ? `<label class="small text-muted">选项 (逗号隔开)</label><input class="form-control form-control-sm" value="${(f.options||[]).join(',')}" oninput="fields[${i}].options=this.value.split(',')">` : ''}
+                <div class="col-md-3">
+                    ${f.type==='select' ? `
+                        <label class="small text-muted fw-bold">
+                            <i class="fa-solid fa-list-ol me-1"></i>选项 (逗号隔开)
+                        </label>
+                        <input class="form-control" value="${(f.options||[]).join(',')}" oninput="fields[${i}].options=this.value.split(',')">
+                    ` : '<div style="height: 58px;"></div>'}
                 </div>
                 <div class="col-md-1 text-end">
-                    <button class="btn btn-sm btn-outline-danger mt-4" onclick="fields.splice(${i},1);render()"><i class="fa-solid fa-trash"></i></button>
+                    <button class="delete-field-btn btn btn-outline-danger" onclick="fields.splice(${i},1);render()" title="删除字段">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
                 </div>
             </div>`;
         });
