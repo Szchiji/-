@@ -20,7 +20,21 @@ def webhook():
     try:
         json_data = request.get_json(force=True)
         update = Update.de_json(json_data, global_ptb_app.bot)
-        asyncio.run_coroutine_threadsafe(global_ptb_app.process_update(update), global_bot_loop)
+        
+        # 添加 Future 回调以捕获异步任务中的异常
+        future = asyncio.run_coroutine_threadsafe(global_ptb_app.process_update(update), global_bot_loop)
+        
+        def check_future_exception(fut):
+            try:
+                exc = fut.exception()
+                if exc:
+                    import traceback
+                    print(f"❌ Webhook 异步任务异常:")
+                    print(''.join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
+            except Exception as e:
+                print(f"❌ 回调函数本身异常: {e}")
+        
+        future.add_done_callback(check_future_exception)
         return "OK", 200
     except Exception as e:
         print(f"❌ Webhook Error: {e}")
@@ -323,6 +337,7 @@ def do_like(chat_id, message_id, emoji):
     except Exception as e: print(f"❌ [Like] 请求异常: {e}", flush=True)
 
 async def cmd_start(update: Update, context):
+    print(f"✅ /start 命令被触发，用户 ID: {update.effective_user.id}")
     user_id = update.effective_user.id
     admin_id = safe_int(os.getenv('ADMIN_ID', 0))
     if user_id == admin_id:
