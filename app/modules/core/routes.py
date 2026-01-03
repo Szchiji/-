@@ -18,13 +18,13 @@ global_flask_app = None  # 🆕 新增：持有 Flask App 实例
 BEIJING_TZ = pytz.timezone('Asia/Shanghai')
 
 def get_beijing_now():
-    """Get current time in Beijing timezone"""
-    return datetime.now(BEIJING_TZ)
+    """Get current time in Beijing timezone as naive datetime (for database storage)"""
+    return datetime.now(BEIJING_TZ).replace(tzinfo=None)
 
 def get_beijing_today():
-    """Get today's date at midnight in Beijing timezone"""
-    now = get_beijing_now()
-    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    """Get today's date at midnight in Beijing timezone as naive datetime"""
+    now = datetime.now(BEIJING_TZ)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
 
 async def is_user_admin_in_group(bot, chat_id, user_id):
     """Check if a user is an administrator in a specific group"""
