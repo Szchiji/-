@@ -18,6 +18,8 @@ global_flask_app = None  # 🆕 新增：持有 Flask App 实例
 # Constants
 EXPIRATION_CHECK_INTERVAL = 3600  # Check expired users every hour (in seconds)
 JWT_TOKEN_EXPIRY_DAYS = 7  # JWT token validity for group access (in days)
+MAX_CONCURRENT_BANS = 5  # Maximum concurrent ban operations to avoid rate limits
+EXPIRED_USERS_BATCH_SIZE = 100  # Process expired users in batches to avoid memory issues
 
 # Beijing timezone
 BEIJING_TZ = pytz.timezone('Asia/Shanghai')
@@ -373,18 +375,18 @@ async def check_expired_users(context):
         with global_flask_app.app_context():
             try:
                 now = get_beijing_now()
-                # Find all users whose expiration date has passed and are not yet banned
-                # Using joinedload to avoid N+1 query problem
+                # Find expired users with a limit to avoid memory issues
+                # Process in batches for large datasets
                 expired_users = GroupUser.query.options(
                     joinedload(GroupUser.group)
                 ).filter(
                     GroupUser.expiration_date.isnot(None),
                     GroupUser.expiration_date < now,
                     GroupUser.is_banned == False
-                ).all()
+                ).limit(EXPIRED_USERS_BATCH_SIZE).all()
                 
                 if expired_users:
-                    print(f"🔍 Found {len(expired_users)} expired users to ban", flush=True)
+                    print(f"🔍 Found {len(expired_users)} expired users to ban (batch limit: {EXPIRED_USERS_BATCH_SIZE})", flush=True)
                 
                 # Collect users to ban and prepare async operations
                 users_to_ban = []
@@ -393,7 +395,7 @@ async def check_expired_users(context):
                         users_to_ban.append((user, user.group))
                 
                 if not users_to_ban:
-                    return
+                    return None
                     
                 # Mark users as banned in database first
                 for user, group in users_to_ban:
@@ -417,7 +419,7 @@ async def check_expired_users(context):
     if not users_to_ban:
         return
     
-    # Now perform all async Telegram operations concurrently
+    # Now perform all async Telegram operations with rate limiting
     async def ban_user_async(user, group):
         """Ban a single user and send notification"""
         try:
@@ -447,8 +449,15 @@ async def check_expired_users(context):
         except Exception as e:
             print(f"Error banning user {user.tg_id}: {e}")
     
-    # Run all ban operations concurrently
-    await asyncio.gather(*[ban_user_async(user, group) for user, group in users_to_ban], return_exceptions=True)
+    # Use semaphore to limit concurrent operations and avoid Telegram API rate limits
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_BANS)
+    
+    async def ban_with_limit(user, group):
+        async with semaphore:
+            await ban_user_async(user, group)
+    
+    # Run ban operations with rate limiting
+    await asyncio.gather(*[ban_with_limit(user, group) for user, group in users_to_ban], return_exceptions=True)
 
 async def run_bot(app_instance):
     """
