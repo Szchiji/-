@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, session, jsonify
 from app import db
 from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM
+from app.services import sanitize_html_for_telegram
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions, ChatMember
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ChatMemberHandler, filters
 from sqlalchemy.orm import joinedload
@@ -313,6 +314,9 @@ def api_push_user():
             val = p.get(f['key'], '')
             text = text.replace(f"{{{f['label']}}}", str(val))
 
+        # Sanitize HTML before sending to Telegram
+        text = sanitize_html_for_telegram(text)
+
         asyncio.run_coroutine_threadsafe(
             global_ptb_app.bot.send_message(chat_id=cid, text=text, parse_mode='HTML'),
             global_bot_loop
@@ -437,9 +441,11 @@ async def check_expired_users(context):
             
             # Try to send notification to user privately
             try:
+                # Sanitize HTML before sending to Telegram
+                sanitized_msg = sanitize_html_for_telegram(ban_msg)
                 await context.bot.send_message(
                     chat_id=user.tg_id,
-                    text=ban_msg,
+                    text=sanitized_msg,
                     parse_mode='HTML'
                 )
             except Exception as e:
@@ -594,7 +600,8 @@ async def on_message(update: Update, context):
             if conf.get('checkin_open') and txt in checkin_cmds:
                 db_user = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
                 if not db_user:
-                    await msg.reply_html(conf.get('msg_not_registered', '未认证'))
+                    msg_text = sanitize_html_for_telegram(conf.get('msg_not_registered', '未认证'))
+                    await msg.reply_html(msg_text)
                 else:
                     # Check if user is expired and should be banned
                     if db_user.expiration_date and get_beijing_now() > db_user.expiration_date:
@@ -609,12 +616,14 @@ async def on_message(update: Update, context):
                                 )
                             except Exception as e:
                                 print(f"Failed to ban user {user.id}: {e}")
-                        await msg.reply_html(conf.get('msg_expired_ban', '⛔️ 您的认证已过期'))
+                        msg_text = sanitize_html_for_telegram(conf.get('msg_expired_ban', '⛔️ 您的认证已过期'))
+                        await msg.reply_html(msg_text)
                     else:
                         db_user.checkin_time = get_beijing_now()
                         db_user.online = True
                         db.session.commit()
-                        r = await msg.reply_html(conf.get('msg_checkin_success', '打卡成功'))
+                        msg_text = sanitize_html_for_telegram(conf.get('msg_checkin_success', '打卡成功'))
+                        r = await msg.reply_html(msg_text)
                         del_time = safe_int(conf.get('checkin_del_time'), 0)
                         if del_time > 0:
                             context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=r)
@@ -706,6 +715,9 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
                 except: continue
                 
             text = header + "\n\n" + "\n".join(lines)
+            
+            # Sanitize HTML before sending to Telegram
+            text = sanitize_html_for_telegram(text)
             
             buttons = []
             nav_row = []
