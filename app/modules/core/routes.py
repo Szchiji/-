@@ -170,6 +170,50 @@ def api_delete_user():
     db.session.commit()
     return jsonify({'status':'ok'})
 
+@core_bp.route('/api/search_users', methods=['POST'])
+def api_search_users():
+    if not session.get('logged_in'): return jsonify({'status':'error'})
+    d = request.json
+    keyword = d.get('keyword', '').strip()
+    gid = session.get('current_group_id')
+    
+    if not gid or not keyword:
+        return jsonify({'status':'error', 'msg':'Missing parameters'})
+    
+    group = BotGroup.query.get(gid)
+    if not group:
+        return jsonify({'status':'error', 'msg':'Group not found'})
+    
+    fields = get_group_fields(group)
+    
+    # Search users by keyword in profile_data
+    users = GroupUser.query.filter(
+        GroupUser.group_id == gid,
+        GroupUser.profile_data.contains(keyword)
+    ).order_by(GroupUser.id.desc()).limit(200).all()
+    
+    result_users = []
+    for u in users:
+        try:
+            profile = json.loads(u.profile_data) if u.profile_data else {}
+        except (ValueError, TypeError, json.JSONDecodeError):
+            profile = {}
+        
+        result_users.append({
+            'id': u.id,
+            'tg_id': u.tg_id,
+            'profile': profile,
+            'is_banned': u.is_banned,
+            'expiration_date': u.expiration_date.strftime('%Y-%m-%d %H:%M:%S') if u.expiration_date else None
+        })
+    
+    return jsonify({
+        'status': 'ok',
+        'users': result_users,
+        'fields': fields
+    })
+
+
 @core_bp.route('/api/push_user', methods=['POST'])
 def api_push_user():
     if not session.get('logged_in'): return jsonify({'status':'error'})
