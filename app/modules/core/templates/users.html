@@ -1,44 +1,125 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="card shadow mb-4">
-    <div class="card-header py-3 d-flex justify-content-between align-items-center bg-white">
-        <h6 class="m-0 font-weight-bold text-primary">认证用户列表</h6>
-        <!-- 搜索框 -->
-        <div class="d-flex">
-            <button class="btn btn-success btn-sm me-2" onclick="openAddUser()"><i class="fa-solid fa-plus"></i> 添加用户</button>
-            <input id="searchInput" type="text" class="form-control form-control-sm me-2" placeholder="搜索关键字">
-            <button class="btn btn-primary btn-sm" onclick="searchUsers()">搜索</button>
+<style>
+    .page-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 15px;
+        margin-bottom: 2rem;
+        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+    }
+    
+    .search-box {
+        background: white;
+        border-radius: 10px;
+        padding: 0.5rem;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .table-container {
+        background: white;
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    }
+    
+    .action-btn {
+        transition: all 0.3s ease;
+        border-radius: 8px;
+        padding: 0.4rem 0.8rem;
+    }
+    
+    .action-btn:hover {
+        transform: scale(1.1);
+    }
+    
+    .modal-content {
+        border-radius: 20px;
+        border: none;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+    
+    .modal-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 20px 20px 0 0;
+        padding: 1.5rem;
+    }
+    
+    .modal-header .btn-close {
+        filter: brightness(0) invert(1);
+    }
+</style>
+
+<div class="page-header">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h4 class="fw-bold mb-1"><i class="fa-solid fa-users me-2"></i>认证用户管理</h4>
+            <p class="mb-0 opacity-75">管理群组内的所有认证用户</p>
+        </div>
+        <button class="btn btn-light fw-bold px-4" onclick="openAddUser()">
+            <i class="fa-solid fa-plus me-2"></i>添加用户
+        </button>
+    </div>
+</div>
+
+<div class="mb-4">
+    <div class="search-box">
+        <div class="d-flex align-items-center">
+            <i class="fa-solid fa-search text-muted ms-3 me-2"></i>
+            <input id="searchInput" type="text" class="form-control border-0 shadow-none" placeholder="搜索用户 TG ID 或资料...">
+            <button class="btn btn-primary ms-2 me-2" onclick="searchUsers()">
+                <i class="fa-solid fa-search me-2"></i>搜索
+            </button>
         </div>
     </div>
-    <div class="card-body px-0 pt-0">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead><tr><th class="ps-4">TG ID</th>{% for f in fields %}<th>{{ f.label }}</th>{% endfor %}<th>状态</th><th>过期时间</th><th class="text-end pe-4">管理</th></tr></thead>
-                <tbody id="userTable">
-                    {% for user in users %}
-                    <tr>
-                        <td class="ps-4 fw-bold">{{ user.tg_id }}</td>
-                        {% for field in fields %}<td>{{ user.profile_dict.get(field.key, '') }}</td>{% endfor %}
-                        <td>
-                            {% if user.is_banned %}
-                            <span class="badge bg-danger">封禁</span>
-                            {% elif user.expiration_date %}
-                            <span class="badge bg-success">正常</span>
-                            {% else %}
-                            <span class="badge bg-secondary">永久</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ user.expiration_date }}</td>
-                        <td class="text-end pe-4">
-                            <button class="btn btn-sm btn-light text-warning" onclick="pushUser({{ user.id }})" title="推送"><i class="fa-solid fa-bell"></i></button>
-                            <button class="btn btn-sm btn-light text-primary" data-id="{{ user.id }}" data-tgid="{{ user.tg_id }}" data-profile='{{ user.profile_data|default('{}')|safe }}' onclick="openEdit(this)" title="编辑"><i class="fa-solid fa-pen"></i></button>
-                            <button class="btn btn-sm btn-light text-danger" onclick="delUser({{ user.id }})" title="删除"><i class="fa-solid fa-trash"></i></button>
-                        </td>
-                    </tr>
+</div>
+
+<div class="table-container">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th class="ps-4">TG ID</th>
+                    {% for f in fields %}
+                    <th>{{ f.label }}</th>
                     {% endfor %}
-                </tbody>
-            </table>
-        </div>
+                    <th>状态</th>
+                    <th>过期时间</th>
+                    <th class="text-end pe-4">操作</th>
+                </tr>
+            </thead>
+            <tbody id="userTable">
+                {% for user in users %}
+                <tr>
+                    <td class="ps-4 fw-bold">{{ user.tg_id }}</td>
+                    {% for field in fields %}<td>{{ user.profile_dict.get(field.key, '') }}</td>{% endfor %}
+                    <td>
+                        {% if user.is_banned %}
+                        <span class="badge bg-danger">封禁</span>
+                        {% elif user.expiration_date %}
+                        <span class="badge bg-success">正常</span>
+                        {% else %}
+                        <span class="badge bg-secondary">永久</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ user.expiration_date }}</td>
+                    <td class="text-end pe-4">
+                        <button class="action-btn btn btn-sm btn-warning text-white" onclick="pushUser({{ user.id }})" title="推送">
+                            <i class="fa-solid fa-bell"></i>
+                        </button>
+                        <button class="action-btn btn btn-sm btn-primary" data-id="{{ user.id }}" data-tgid="{{ user.tg_id }}" data-profile='{{ user.profile_data|default('{}')|safe }}' onclick="openEdit(this)" title="编辑">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button class="action-btn btn btn-sm btn-danger" onclick="delUser({{ user.id }})" title="删除">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
@@ -83,23 +164,23 @@
 <div class="modal fade" id="addUserModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header py-2">
-                <h6 class="modal-title fw-bold">添加用户</h6>
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">添加用户</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body p-4">
                 <form id="addUserForm">
                     <div class="mb-3">
-                        <label class="form-label">TG ID <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="tg_id" required>
+                        <label class="form-label fw-bold">TG ID <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="tg_id" required placeholder="输入 Telegram 用户 ID">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">添加天数</label>
-                        <input type="number" class="form-control" name="add_days" value="30">
+                        <label class="form-label fw-bold">添加天数</label>
+                        <input type="number" class="form-control" name="add_days" value="30" placeholder="设置有效天数">
                     </div>
                     {% for field in fields %}
                     <div class="mb-3">
-                        <label class="form-label">{{ field.label }}</label>
+                        <label class="form-label fw-bold">{{ field.label }}</label>
                         {% if field.type == 'select' %}
                         <select class="form-control profile-input" name="{{ field.key }}">
                             <option value="">请选择</option>
@@ -108,15 +189,17 @@
                             {% endfor %}
                         </select>
                         {% else %}
-                        <input type="text" class="form-control profile-input" name="{{ field.key }}">
+                        <input type="text" class="form-control profile-input" name="{{ field.key }}" placeholder="输入{{ field.label }}">
                         {% endif %}
                     </div>
                     {% endfor %}
                 </form>
             </div>
-            <div class="modal-footer py-2">
+            <div class="modal-footer border-0 pt-0">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" onclick="submitAddUser()">确定</button>
+                <button type="button" class="btn btn-primary px-4" onclick="submitAddUser()">
+                    <i class="fa-solid fa-check me-2"></i>确定
+                </button>
             </div>
         </div>
     </div>
