@@ -68,8 +68,8 @@
                     <td>${user.expiration_date || ""}</td>
                     <td class="text-end pe-4">
                         <button class="btn btn-sm btn-light text-warning" onclick="pushUser(${user.id})" title="推送"><i class="fa-solid fa-bell"></i></button>
-                        <button class="btn btn-sm btn-light text-primary" onclick="editUser(${user.id})" title="编辑"><i class="fa-solid fa-pen"></i></button>
-                        <button class="btn btn-sm btn-light text-danger" onclick="deleteUser(${user.id})" title="删除"><i class="fa-solid fa-trash"></i></button>
+                        <button class="btn btn-sm btn-light text-primary" data-id="${user.id}" data-tgid="${user.tg_id}" data-profile='${JSON.stringify(user.profile)}' onclick="openEdit(this)" title="编辑"><i class="fa-solid fa-pen"></i></button>
+                        <button class="btn btn-sm btn-light text-danger" onclick="delUser(${user.id})" title="删除"><i class="fa-solid fa-trash"></i></button>
                     </td>
                 </tr>
             `).join('');
@@ -134,7 +134,7 @@
         const form = document.getElementById('addUserForm');
         const formData = new FormData(form);
         const data = {
-            group_id: {{ group.id }},
+            group_id: {{ group.id|tojson }},
             tg_id: formData.get('tg_id'),
             add_days: formData.get('add_days'),
             profile: {}

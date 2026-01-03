@@ -193,7 +193,7 @@ def api_search_users():
     for u in users:
         try:
             profile = json.loads(u.profile_data) if u.profile_data else {}
-        except:
+        except (ValueError, TypeError, json.JSONDecodeError):
             profile = {}
         
         result_users.append({
