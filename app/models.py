@@ -20,7 +20,7 @@ class GroupUser(db.Model):
     group_id = db.Column(db.Integer, db.ForeignKey('bot_groups.id'), index=True)
     tg_id = db.Column(db.BigInteger)
     profile_data = db.Column(db.Text, default='{}')
-    expiration_date = db.Column(db.DateTime, nullable=True)
+    expiration_date = db.Column(db.DateTime, nullable=True)  # Consider adding composite index: (expiration_date, is_banned)
     is_banned = db.Column(db.Boolean, default=False)
     checkin_time = db.Column(db.DateTime)
     online = db.Column(db.Boolean, default=False)

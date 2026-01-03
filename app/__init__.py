@@ -19,7 +19,12 @@ def create_app():
         
     app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default_secret_key')
+    
+    # SECRET_KEY 配置 - 生产环境必须设置
+    secret_key = os.getenv('SECRET_KEY', 'default_secret_key')
+    if secret_key == 'default_secret_key':
+        print("⚠️ WARNING: Using default SECRET_KEY. Please set SECRET_KEY environment variable for production!", flush=True)
+    app.config['SECRET_KEY'] = secret_key
     
     db.init_app(app)
     

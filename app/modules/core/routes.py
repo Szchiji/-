@@ -389,16 +389,20 @@ async def check_expired_users(context):
                     print(f"🔍 Found {len(expired_users)} expired users to ban (batch limit: {EXPIRED_USERS_BATCH_SIZE})", flush=True)
                 
                 # Collect users to ban and prepare async operations
+                # Also retrieve configurations here to avoid repeated context creation
                 users_to_ban = []
                 for user in expired_users:
                     if user.group and user.group.is_active:
-                        users_to_ban.append((user, user.group))
+                        # Get configuration in sync context
+                        conf = get_group_conf(user.group)
+                        ban_msg = conf.get('msg_expired_ban', '⛔️ <b>您的认证已过期，已被暂时禁言。请联系管理员续费。</b>')
+                        users_to_ban.append((user, user.group, ban_msg))
                 
                 if not users_to_ban:
                     return None
                     
                 # Mark users as banned in database first
-                for user, group in users_to_ban:
+                for user, group, _ in users_to_ban:
                     user.is_banned = True
                 
                 # Commit all changes at once
@@ -420,7 +424,7 @@ async def check_expired_users(context):
         return
     
     # Now perform all async Telegram operations with rate limiting
-    async def ban_user_async(user, group):
+    async def ban_user_async(user, group, ban_msg):
         """Ban a single user and send notification"""
         try:
             # Ban the user in the group
@@ -432,10 +436,6 @@ async def check_expired_users(context):
             print(f"⛔️ Banned expired user {user.tg_id} in group {group.title}", flush=True)
             
             # Try to send notification to user privately
-            with global_flask_app.app_context():
-                conf = get_group_conf(group)
-                ban_msg = conf.get('msg_expired_ban', '⛔️ <b>您的认证已过期，已被暂时禁言。请联系管理员续费。</b>')
-            
             try:
                 await context.bot.send_message(
                     chat_id=user.tg_id,
@@ -452,12 +452,12 @@ async def check_expired_users(context):
     # Use semaphore to limit concurrent operations and avoid Telegram API rate limits
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_BANS)
     
-    async def ban_with_limit(user, group):
+    async def ban_with_limit(user, group, ban_msg):
         async with semaphore:
-            await ban_user_async(user, group)
+            await ban_user_async(user, group, ban_msg)
     
     # Run ban operations with rate limiting
-    await asyncio.gather(*[ban_with_limit(user, group) for user, group in users_to_ban], return_exceptions=True)
+    await asyncio.gather(*[ban_with_limit(user, group, ban_msg) for user, group, ban_msg in users_to_ban], return_exceptions=True)
 
 async def run_bot(app_instance):
     """
