@@ -396,7 +396,6 @@ async def on_message(update: Update, context):
                     # 在线程中执行阻塞请求，避免卡顿
                     asyncio.get_running_loop().run_in_executor(None, do_like, chat.id, msg.message_id, emoji)
 
-            if not group: return
             txt = msg.text.strip()
             
             # 2. 打卡
