@@ -58,7 +58,7 @@ def get_group_fields(group):
         except: pass
     return DEFAULT_FIELDS
 
-# --- Web Routes (修复重点：传入 page 参数) ---
+# --- Web Routes ---
 @core_bp.route('/')
 def index(): return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
 
@@ -67,8 +67,7 @@ def page_select_group():
     if not session.get('logged_in'): return redirect('/core')
     session.pop('current_group_id', None)
     groups = BotGroup.query.order_by(BotGroup.is_active.desc(), BotGroup.updated_at.desc()).all()
-    # ⚡️ 修复：这里必须传入 page='select_group'，否则页面会白屏
-    return render_template('select_group.html', page='select_group', groups=groups)
+    return render_template('select_group.html', groups=groups)
 
 @core_bp.route('/group/<int:gid>/dashboard')
 def page_dashboard(gid):
@@ -256,16 +255,42 @@ async def bot_start(update: Update, context):
         await update.message.reply_html(f"👋 你好！我是打卡机器人。\n你的 ID 是：<code>{user_id}</code>")
 
 def do_like(chat_id, message_id, emoji):
+    """
+    发送点赞 (终极修复版：清理字符 + 严格 JSON)
+    """
     token = os.getenv('TOKEN')
+    
+    # 1. 深度清理：只保留非空字符
     clean_emoji = emoji.strip()
-    if not clean_emoji: clean_emoji = "👍"
-    print(f"👍 [Like] 准备点赞: {clean_emoji}", flush=True)
+    if not clean_emoji:
+        clean_emoji = "👍" # 保底
+        
+    print(f"👍 [Like] 准备点赞: {clean_emoji} (原始: '{emoji}')", flush=True)
+    
     try: 
         url = f"https://api.telegram.org/bot{token}/setMessageReaction"
-        resp = requests.post(url, json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": clean_emoji}]}, timeout=5)
-        if resp.status_code == 200: print("✅ [Like] 成功！", flush=True)
-        else: print(f"❌ [Like] 失败: {resp.text}", flush=True)
-    except Exception as e: print(f"❌ [Like] 请求异常: {e}", flush=True)
+        
+        # 2. 构造 Reaction 对象
+        reaction_obj = [{"type": "emoji", "emoji": clean_emoji}]
+        
+        # 3. 发送请求
+        resp = requests.post(
+            url, 
+            json={"chat_id": chat_id, "message_id": message_id, "reaction": reaction_obj}, 
+            timeout=5
+        )
+        
+        if resp.status_code == 200:
+            print("✅ [Like] 成功！", flush=True)
+        else:
+            print(f"❌ [Like] 失败: {resp.text}", flush=True)
+            # 如果失败，尝试 Plan B：发送一条回复
+            # if "REACTION_INVALID" in resp.text:
+            #     requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
+            #         json={"chat_id": chat_id, "reply_to_message_id": message_id, "text": clean_emoji})
+
+    except Exception as e:
+        print(f"❌ [Like] 请求异常: {e}", flush=True)
 
 async def check_expiration_and_mute(context, group_id, user_id, chat_id, conf):
     from app import create_app
@@ -399,13 +424,17 @@ async def bot_handler(update: Update, context):
     user = update.effective_user
     text = msg.text.strip() if msg.text else ""
 
+    # 1. 自动点赞逻辑 (包含调试日志)
     if conf.get('auto_like'):
         from app import create_app
         with create_app().app_context():
             exists = db.session.query(GroupUser.id).filter_by(group_id=gid, tg_id=user.id).scalar()
+            
             if exists:
                 emoji = conf.get('like_emoji', '❤️')
+                # ⚡️ 调用点赞 (同步函数)
                 do_like(msg.chat.id, msg.message_id, emoji)
+                
                 if conf.get('auto_mute_expired'): 
                     await check_expiration_and_mute(context, gid, user.id, msg.chat.id, conf)
 
