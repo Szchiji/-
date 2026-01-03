@@ -5,6 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPer
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ChatMemberHandler, filters
 import os, jwt, time, json, asyncio, re, requests, math
 from datetime import datetime, timedelta
+import pytz
 
 core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templates')
 
@@ -12,6 +13,27 @@ core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templ
 global_ptb_app = None
 global_bot_loop = None
 global_flask_app = None  # 🆕 新增：持有 Flask App 实例
+
+# Beijing timezone
+BEIJING_TZ = pytz.timezone('Asia/Shanghai')
+
+def get_beijing_now():
+    """Get current time in Beijing timezone"""
+    return datetime.now(BEIJING_TZ)
+
+def get_beijing_today():
+    """Get today's date at midnight in Beijing timezone"""
+    now = get_beijing_now()
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+async def is_user_admin_in_group(bot, chat_id, user_id):
+    """Check if a user is an administrator in a specific group"""
+    try:
+        member = await bot.get_chat_member(chat_id, user_id)
+        return member.status in ['creator', 'administrator']
+    except Exception as e:
+        print(f"Error checking admin status: {e}")
+        return False
 
 # --- Webhook ---
 @core_bp.route('/webhook', methods=['POST'])
@@ -185,12 +207,22 @@ def api_save_user():
     u.profile_data = json.dumps(d['profile'], ensure_ascii=False)
     add = safe_int(d.get('add_days'))
     if add != 0:
-        base = u.expiration_date or datetime.now()
+        base = u.expiration_date or get_beijing_now()
         u.expiration_date = base + timedelta(days=add)
         if add > 0 and u.is_banned:
             u.is_banned = False
-            try: global_ptb_app.bot.restrict_chat_member(chat_id=BotGroup.query.get(gid).chat_id, user_id=u.tg_id, permissions=ChatPermissions.all_permissions())
-            except: pass
+            try: 
+                group = BotGroup.query.get(gid)
+                asyncio.run_coroutine_threadsafe(
+                    global_ptb_app.bot.restrict_chat_member(
+                        chat_id=group.chat_id,
+                        user_id=u.tg_id,
+                        permissions=ChatPermissions.all_permissions()
+                    ),
+                    global_bot_loop
+                ).result(timeout=5)
+            except Exception as e:
+                print(f"Failed to unban user: {e}")
 
     db.session.commit()
     return jsonify({'status':'ok'})
@@ -283,9 +315,33 @@ def magic_login():
     token = request.args.get('token')
     try:
         data = jwt.decode(token, os.getenv('SECRET_KEY', 'secret'), algorithms=['HS256'])
-        session['logged_in'] = True
-        return redirect('/core/select_group')
-    except:
+        user_id = data.get('uid')
+        chat_id = data.get('chat_id')
+        
+        # Check if user is ADMIN_ID (global admin)
+        admin_id = safe_int(os.getenv('ADMIN_ID', 0))
+        if admin_id and user_id == admin_id:
+            session['logged_in'] = True
+            return redirect('/core/select_group')
+        
+        # Check if user is admin in the specific group
+        if chat_id and global_ptb_app:
+            try:
+                # Run async check in the bot loop
+                future = asyncio.run_coroutine_threadsafe(
+                    is_user_admin_in_group(global_ptb_app.bot, chat_id, user_id),
+                    global_bot_loop
+                )
+                is_admin = future.result(timeout=5)
+                if is_admin:
+                    session['logged_in'] = True
+                    return redirect('/core/select_group')
+            except Exception as e:
+                print(f"Error checking group admin: {e}")
+        
+        return "无权限访问后台，仅限机器人管理员", 403
+    except Exception as e:
+        print(f"Login error: {e}")
         return "Invalid Token", 403
 
 @core_bp.route('/logout')
@@ -296,6 +352,68 @@ def logout():
 # =======================
 # 🤖 机器人逻辑 (核心)
 # =======================
+
+async def check_expired_users(context):
+    """
+    Periodic job to check for expired users and mute them in groups
+    """
+    if not global_flask_app:
+        return
+    
+    def _sync_check():
+        with global_flask_app.app_context():
+            try:
+                now = get_beijing_now()
+                # Find all users whose expiration date has passed and are not yet banned
+                expired_users = GroupUser.query.filter(
+                    GroupUser.expiration_date.isnot(None),
+                    GroupUser.expiration_date < now,
+                    GroupUser.is_banned == False
+                ).all()
+                
+                if expired_users:
+                    print(f"🔍 Found {len(expired_users)} expired users to ban", flush=True)
+                
+                for user in expired_users:
+                    try:
+                        group = BotGroup.query.get(user.group_id)
+                        if group and group.is_active:
+                            # Ban the user in the group
+                            asyncio.run_coroutine_threadsafe(
+                                context.bot.restrict_chat_member(
+                                    chat_id=group.chat_id,
+                                    user_id=user.tg_id,
+                                    permissions=ChatPermissions(can_send_messages=False)
+                                ),
+                                global_bot_loop
+                            ).result(timeout=5)
+                            
+                            user.is_banned = True
+                            db.session.commit()
+                            
+                            print(f"⛔️ Banned expired user {user.tg_id} in group {group.title}", flush=True)
+                            
+                            # Send notification to user
+                            conf = get_group_conf(group)
+                            try:
+                                asyncio.run_coroutine_threadsafe(
+                                    context.bot.send_message(
+                                        chat_id=group.chat_id,
+                                        text=conf.get('msg_expired_ban', '⛔️ <b>您的认证已过期，已被暂时禁言。请联系管理员续费。</b>'),
+                                        parse_mode='HTML'
+                                    ),
+                                    global_bot_loop
+                                ).result(timeout=5)
+                            except Exception as e:
+                                print(f"Failed to send ban notification: {e}")
+                    except Exception as e:
+                        print(f"Error banning user {user.tg_id}: {e}")
+                        db.session.rollback()
+            except Exception as e:
+                print(f"Error in check_expired_users: {e}")
+    
+    # Run in executor to avoid blocking
+    await asyncio.get_running_loop().run_in_executor(None, _sync_check)
 
 async def run_bot(app_instance):
     """
@@ -320,6 +438,9 @@ async def run_bot(app_instance):
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
     app.add_handler(CallbackQueryHandler(pagination_callback)) 
     app.add_handler(CommandHandler("start", cmd_start))
+    
+    # Add periodic job to check expired users
+    app.job_queue.run_repeating(check_expired_users, interval=3600, first=10)  # Run every hour
     
     await app.initialize()
     await app.start()
@@ -370,6 +491,8 @@ async def on_my_chat_member(update: Update, context):
     try:
         chat = update.effective_chat
         status = update.my_chat_member.new_chat_member.status
+        user = update.effective_user
+        
         if chat.type in ['group', 'supergroup'] and status in ['administrator', 'member']:
             # 使用全局 App Context
             with global_flask_app.app_context():
@@ -383,10 +506,18 @@ async def on_my_chat_member(update: Update, context):
                 
             domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '')
             if domain:
-                token = jwt.encode({'uid': chat.id, 'exp': time.time()+86400*7}, os.getenv('SECRET_KEY', 'secret'), algorithm='HS256')
-                url = f"https://{domain}/core/magic_login?token={token}"
-                try: await context.bot.send_message(chat.id, f"✅ 机器人已激活！\n\n👉 [点击进入后台管理]({url})", parse_mode='Markdown')
-                except: pass
+                # Check if user is admin in the group
+                is_admin = await is_user_admin_in_group(context.bot, chat.id, user.id)
+                if is_admin:
+                    token = jwt.encode({'uid': user.id, 'chat_id': chat.id, 'exp': time.time()+86400*7}, os.getenv('SECRET_KEY', 'secret'), algorithm='HS256')
+                    url = f"https://{domain}/core/magic_login?token={token}"
+                    try: 
+                        await context.bot.send_message(chat.id, f"✅ 机器人已激活！\n\n👉 [点击进入后台管理]({url})\n\n⚠️ 注意：仅群组管理员可访问后台", parse_mode='Markdown')
+                    except: pass
+                else:
+                    try: 
+                        await context.bot.send_message(chat.id, f"✅ 机器人已激活！")
+                    except: pass
     except Exception as e: print(f"Error in on_my_chat_member: {e}")
 
 async def on_message(update: Update, context):
@@ -421,13 +552,28 @@ async def on_message(update: Update, context):
                 if not db_user:
                     await msg.reply_html(conf.get('msg_not_registered', '未认证'))
                 else:
-                    db_user.checkin_time = datetime.now()
-                    db_user.online = True
-                    db.session.commit()
-                    r = await msg.reply_html(conf.get('msg_checkin_success', '打卡成功'))
-                    del_time = safe_int(conf.get('checkin_del_time'), 0)
-                    if del_time > 0:
-                        context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=r)
+                    # Check if user is expired and should be banned
+                    if db_user.expiration_date and get_beijing_now() > db_user.expiration_date:
+                        if not db_user.is_banned:
+                            db_user.is_banned = True
+                            db.session.commit()
+                            try:
+                                await context.bot.restrict_chat_member(
+                                    chat_id=chat.id,
+                                    user_id=user.id,
+                                    permissions=ChatPermissions(can_send_messages=False)
+                                )
+                            except Exception as e:
+                                print(f"Failed to ban user {user.id}: {e}")
+                        await msg.reply_html(conf.get('msg_expired_ban', '⛔️ 您的认证已过期'))
+                    else:
+                        db_user.checkin_time = get_beijing_now()
+                        db_user.online = True
+                        db.session.commit()
+                        r = await msg.reply_html(conf.get('msg_checkin_success', '打卡成功'))
+                        del_time = safe_int(conf.get('checkin_del_time'), 0)
+                        if del_time > 0:
+                            context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=r)
                 return
 
             # 3. 查询
@@ -476,15 +622,18 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
     def _sync_query():
         nonlocal page
         with global_flask_app.app_context():
-            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            base = GroupUser.query.filter(GroupUser.group_id == group_id, GroupUser.online == True)
+            today = get_beijing_today()
+            # Always filter by today's check-in, whether it's a keyword search or not
+            base = GroupUser.query.filter(
+                GroupUser.group_id == group_id,
+                GroupUser.online == True,
+                GroupUser.checkin_time >= today
+            )
             
             if kw:
-                base = GroupUser.query.filter(GroupUser.group_id == group_id)
                 base = base.filter(GroupUser.profile_data.contains(kw))
                 header = conf.get('msg_filter_header', '🔍 <b>筛选结果：</b>')
             else:
-                base = base.filter(GroupUser.checkin_time >= today)
                 header = conf.get('msg_query_header', '🔍 <b>今日在线：</b>')
                 
             users = base.order_by(GroupUser.id.desc()).all()
