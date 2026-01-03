@@ -122,8 +122,12 @@ def page_settings(gid):
 def api_toggle_group():
     if not session.get('logged_in'): return jsonify({'status':'error','msg':'Auth required'})
     d = request.json
-    if not d or 'id' not in d or 'action' not in d:
-        return jsonify({'status':'error','msg':'Missing parameters'})
+    if not d:
+        return jsonify({'status':'error','msg':'Missing request body'})
+    if 'id' not in d:
+        return jsonify({'status':'error','msg':'Missing group ID'})
+    if 'action' not in d:
+        return jsonify({'status':'error','msg':'Missing action'})
     
     try:
         group_id = int(d['id'])
