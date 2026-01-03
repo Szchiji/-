@@ -760,14 +760,25 @@ async def on_message(update: Update, context):
                         msg_text = sanitize_html_for_telegram(conf.get('msg_expired_ban', '⛔️ 您的认证已过期'))
                         await msg.reply_html(msg_text)
                     else:
-                        db_user.checkin_time = get_beijing_now()
-                        db_user.online = True
-                        db.session.commit()
-                        msg_text = sanitize_html_for_telegram(conf.get('msg_checkin_success', '打卡成功'))
-                        r = await msg.reply_html(msg_text)
-                        del_time = safe_int(conf.get('checkin_del_time'), 0)
-                        if del_time > 0:
-                            context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=r)
+                        # Check if user has already checked in today
+                        today = get_beijing_today()
+                        if db_user.checkin_time and db_user.checkin_time >= today:
+                            # User already checked in today, send repeat check-in message
+                            msg_text = sanitize_html_for_telegram(conf.get('msg_repeat_checkin', '🔄 <b>今天已打卡</b>'))
+                            r = await msg.reply_html(msg_text)
+                            del_time = safe_int(conf.get('checkin_del_time'), 0)
+                            if del_time > 0:
+                                context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=r)
+                        else:
+                            # First check-in today, proceed normally
+                            db_user.checkin_time = get_beijing_now()
+                            db_user.online = True
+                            db.session.commit()
+                            msg_text = sanitize_html_for_telegram(conf.get('msg_checkin_success', '打卡成功'))
+                            r = await msg.reply_html(msg_text)
+                            del_time = safe_int(conf.get('checkin_del_time'), 0)
+                            if del_time > 0:
+                                context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=r)
                 return
 
             # 3. 查询
