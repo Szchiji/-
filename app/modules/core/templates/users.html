@@ -125,8 +125,86 @@
 <script>
     // Open Add User Modal
     function openAddUser() {
+        // Reset form
+        document.getElementById('addUserForm').reset();
+        
+        // Set title to "添加用户"
+        document.querySelector('#addUserModal .modal-title').textContent = '添加用户';
+        
+        // Make tg_id editable
+        const tgIdInput = document.querySelector('input[name="tg_id"]');
+        tgIdInput.readOnly = false;
+        
+        // Set add_days to default value (30)
+        document.querySelector('input[name="add_days"]').value = '30';
+        
         const modal = new bootstrap.Modal(document.getElementById('addUserModal'));
         modal.show();
+    }
+    
+    // Open Edit User Modal
+    function openEdit(btn) {
+        // Parse profile data from button's data attribute
+        let profile = {};
+        try {
+            profile = JSON.parse(btn.dataset.profile);
+        } catch (e) {
+            console.error('Failed to parse profile data:', e);
+            profile = {};
+        }
+        
+        // Reset form first
+        document.getElementById('addUserForm').reset();
+        
+        // Set title to "编辑用户"
+        document.querySelector('#addUserModal .modal-title').textContent = '编辑用户';
+        
+        // Set tg_id and make it read-only
+        const tgIdInput = document.querySelector('input[name="tg_id"]');
+        tgIdInput.value = btn.dataset.tgid;
+        tgIdInput.readOnly = true;
+        
+        // Set add_days to 0 (don't extend expiration by default)
+        document.querySelector('input[name="add_days"]').value = '0';
+        
+        // Populate profile fields
+        document.querySelectorAll('.profile-input').forEach(input => {
+            const fieldName = input.name;
+            if (profile[fieldName]) {
+                input.value = profile[fieldName];
+            }
+        });
+        
+        // Show modal
+        const modal = new bootstrap.Modal(document.getElementById('addUserModal'));
+        modal.show();
+    }
+    
+    // Delete User
+    async function delUser(id) {
+        if (!confirm('确定要删除该用户吗？')) return;
+        
+        try {
+            const res = await fetch("/core/api/delete_user", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: id }),
+            });
+            
+            if (!res.ok) {
+                throw new Error('Network response was not ok');
+            }
+            
+            const data = await res.json();
+            if (data.status === 'ok') {
+                location.reload();
+            } else {
+                alert(data.msg || '删除失败');
+            }
+        } catch (error) {
+            alert('网络错误或请求失败，请稍后重试');
+            console.error('Error:', error);
+        }
     }
 
     // Submit Add User Form
