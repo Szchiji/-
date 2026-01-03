@@ -371,10 +371,9 @@ def magic_login():
 @core_bp.route('/auth_verify/<session_token>')
 def auth_verify_page(session_token):
     """Display verification page with code"""
-    if not global_flask_app:
-        return "System not ready", 503
-    
-    with global_flask_app.app_context():
+    # Try to use current_app from Flask, fall back to global_flask_app for bot context
+    from flask import current_app
+    try:
         auth_session = AuthSession.query.filter_by(session_token=session_token).first()
         
         if not auth_session:
@@ -391,6 +390,9 @@ def auth_verify_page(session_token):
         return render_template('auth_verify.html', 
                              code=auth_session.verification_code,
                              session_token=session_token)
+    except Exception as e:
+        print(f"Error in auth_verify_page: {e}")
+        return "服务器错误", 500
 
 @core_bp.route('/api/check_auth_status', methods=['POST'])
 def api_check_auth_status():
