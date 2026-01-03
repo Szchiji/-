@@ -5,7 +5,7 @@ from app.services import sanitize_html_for_telegram
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions, ChatMember
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ChatMemberHandler, filters
 from sqlalchemy.orm import joinedload
-import os, jwt, time, json, asyncio, re, requests, math, secrets, string
+import os, jwt, time, json, asyncio, re, requests, math, secrets, string, hmac
 from datetime import datetime, timedelta
 import pytz
 
@@ -371,8 +371,6 @@ def magic_login():
 @core_bp.route('/auth_verify/<session_token>')
 def auth_verify_page(session_token):
     """Display verification page with code"""
-    # Try to use current_app from Flask, fall back to global_flask_app for bot context
-    from flask import current_app
     try:
         auth_session = AuthSession.query.filter_by(session_token=session_token).first()
         
@@ -692,23 +690,25 @@ async def on_message(update: Update, context):
         if chat.type == 'private':
             admin_id = safe_int(os.getenv('ADMIN_ID', 0))
             if user.id == admin_id and txt.isdigit() and len(txt) == 6:
-                # Try to verify the code
+                # Try to verify the code using constant-time comparison
                 def _verify_code():
                     with global_flask_app.app_context():
-                        auth_session = AuthSession.query.filter_by(
+                        # Get all pending sessions for this user
+                        pending_sessions = AuthSession.query.filter_by(
                             user_id=user.id,
-                            verification_code=txt,
                             is_verified=False
-                        ).first()
+                        ).all()
                         
-                        if auth_session:
-                            # Check if not expired
-                            if get_beijing_now() <= auth_session.expires_at:
-                                auth_session.is_verified = True
-                                db.session.commit()
-                                return True
-                            else:
-                                return False
+                        # Use constant-time comparison to prevent timing attacks
+                        for auth_session in pending_sessions:
+                            if hmac.compare_digest(auth_session.verification_code, txt):
+                                # Check if not expired
+                                if get_beijing_now() <= auth_session.expires_at:
+                                    auth_session.is_verified = True
+                                    db.session.commit()
+                                    return True
+                                else:
+                                    return False
                         return None
                 
                 result = await asyncio.get_running_loop().run_in_executor(None, _verify_code)

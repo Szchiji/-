@@ -38,7 +38,6 @@ class AuthSession(db.Model):
     is_verified = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.now)
     expires_at = db.Column(db.DateTime)
-    chat_id = db.Column(db.String(50), nullable=True)
 
 DEFAULT_FIELDS = [
     {"key": "name", "label": "昵称", "type": "text"},
