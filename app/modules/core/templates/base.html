@@ -29,43 +29,45 @@
 
     <div class="container-fluid">
         <div class="row">
-            <!-- ⚡️ 只有当前在某个群组内时，才显示侧边栏 -->
-            {% if session.get('logged_in') and current_group is defined and current_group %}
+            <!-- ⚡️ 修复点：无论登录状态，侧边栏始终显示，提供切换功能 -->
+            {% if session.get('logged_in') %}
             <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
                 <div class="position-sticky pt-3">
                     <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-1 text-muted">
-                        <span>当前群组: {{ current_group.title }}</span>
+                        <span>{% if current_group is defined and current_group %}当前群组: {{ current_group.title }}{% else %}未选择群组{% endif %}</span>
                     </h6>
                     <ul class="nav flex-column">
+                        {% if current_group is defined and current_group %}
                         <li class="nav-item">
-                            <a class="nav-link {% if page == 'dashboard' %}active{% endif %}" href="/core/group/{{ current_group.id }}/dashboard">
+                            <a href="/core/group/{{ current_group.id }}/dashboard" class="nav-link {% if page == 'dashboard' %}active{% endif %}">
                                 <i class="fa-solid fa-chart-line"></i> 数据概览
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if page == 'users' %}active{% endif %}" href="/core/group/{{ current_group.id }}/users">
+                            <a href="/core/group/{{ current_group.id }}/users" class="nav-link {% if page == 'users' %}active{% endif %}">
                                 <i class="fa-solid fa-users"></i> 用户管理
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if page == 'fields' %}active{% endif %}" href="/core/group/{{ current_group.id }}/fields">
+                            <a href="/core/group/{{ current_group.id }}/fields" class="nav-link {% if page == 'fields' %}active{% endif %}">
                                 <i class="fa-solid fa-list"></i> 资料字段
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if page == 'settings' %}active{% endif %}" href="/core/group/{{ current_group.id }}/settings">
+                            <a href="/core/group/{{ current_group.id }}/settings" class="nav-link {% if page == 'settings' %}active{% endif %}">
                                 <i class="fa-solid fa-cog"></i> 功能配置
                             </a>
                         </li>
+                        {% endif %}
                         <li class="nav-item">
-                            <a class="nav-link text-danger" href="/core/select_group">
-                                <i class="fa-solid fa-exchange-alt"></i> 切换群组
+                            <a href="/core/select_group" class="nav-link {% if page == 'select_group' %}active{% endif %}">
+                                <i class="fa-solid fa-exchange-alt"></i> 选择群组
                             </a>
                         </li>
                     </ul>
                 </div>
             </nav>
-
+            
             <!-- 有侧边栏时的内容区 -->
             <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
                 {% block content %}{% endblock %}
@@ -73,10 +75,9 @@
             
             {% else %}
             
-            <!-- 无侧边栏时的全屏内容区 (修复了 block 重复定义的问题) -->
+            <!-- 无侧边栏时的全屏内容区 -->
             <main class="col-md-12 ms-sm-auto col-lg-12 px-md-4">
-                <!-- 这里我们复用同一个 content 块，但通过 if/else 分支确保它只渲染一次 -->
-                {{ self.content() }}
+                {% block content %}{% endblock %}
             </main>
             {% endif %}
         </div>
