@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bot Manager</title>
-    <!-- Bootstrap 5 (为了兼容现有的 JS 逻辑，我们用 BS5 但写成 BS4 的朴素风格) -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -30,8 +29,8 @@
 
     <div class="container-fluid">
         <div class="row">
-            <!-- ⚡️ 关键修复：只有当 current_group 存在时，才显示侧边栏 -->
-            {% if session.get('logged_in') and current_group %}
+            <!-- ⚡️ 只有当前在某个群组内时，才显示侧边栏 -->
+            {% if session.get('logged_in') and current_group is defined and current_group %}
             <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
                 <div class="position-sticky pt-3">
                     <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-1 text-muted">
@@ -66,20 +65,18 @@
                     </ul>
                 </div>
             </nav>
-            
-            <!-- 有侧边栏时，主内容向右偏移 -->
+
+            <!-- 有侧边栏时的内容区 -->
             <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
                 {% block content %}{% endblock %}
             </main>
             
             {% else %}
             
-            <!-- 没有侧边栏时 (比如选择群组页)，主内容全屏 -->
+            <!-- 无侧边栏时的全屏内容区 (修复了 block 重复定义的问题) -->
             <main class="col-md-12 ms-sm-auto col-lg-12 px-md-4">
-                {% block full_content %}
-                    <!-- 为了兼容 select_group.html 的 block content 写法 -->
-                    {% block content %}{% endblock %}
-                {% endblock %}
+                <!-- 这里我们复用同一个 content 块，但通过 if/else 分支确保它只渲染一次 -->
+                {{ self.content() }}
             </main>
             {% endif %}
         </div>
