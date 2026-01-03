@@ -11,6 +11,7 @@ core_bp = Blueprint('core', __name__, url_prefix='/core', template_folder='templ
 # --- 全局变量 ---
 global_ptb_app = None
 global_bot_loop = None
+global_flask_app = None  # 🆕 新增：持有 Flask App 实例
 
 # --- Webhook ---
 @core_bp.route('/webhook', methods=['POST'])
@@ -82,7 +83,6 @@ def page_users(gid):
     if not session.get('logged_in'): return redirect('/core')
     session['current_group_id'] = gid
     group = BotGroup.query.get_or_404(gid)
-    # ⚡️ 修复点：将 updated_at 改为 id，防止报错
     users = GroupUser.query.filter_by(group_id=gid).order_by(GroupUser.id.desc()).limit(200).all()
     for u in users:
         try: u.profile_dict = json.loads(u.profile_data) if u.profile_data else {}
@@ -221,14 +221,18 @@ def logout():
 # 🤖 机器人逻辑 (核心)
 # =======================
 
-async def run_bot():
+async def run_bot(app_instance):
+    """
+    初始化机器人，接收 Flask App 实例以便在回调中使用 Context
+    """
     token = os.getenv('TG_BOT_TOKEN')
     if not token: 
         print("⚠️ 未设置 TG_BOT_TOKEN")
         return
 
-    global global_bot_loop
+    global global_bot_loop, global_flask_app
     global_bot_loop = asyncio.get_running_loop()
+    global_flask_app = app_instance # 📦 存储 Flask App 实例
 
     print("🤖 正在初始化 Bot...", flush=True)
     app = Application.builder().token(token).build()
@@ -249,12 +253,9 @@ def do_like(chat_id, message_id, emoji):
     token = os.getenv('TG_BOT_TOKEN')
     if not token or not emoji: return
     clean_emoji = emoji.strip()
-    print(f"👍 [Like] 准备点赞: {clean_emoji}", flush=True)
     try: 
         url = f"https://api.telegram.org/bot{token}/setMessageReaction"
-        resp = requests.post(url, json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": clean_emoji}]}, timeout=5)
-        if resp.status_code == 200: print("✅ [Like] 成功！", flush=True)
-        else: print(f"❌ [Like] 失败: {resp.text}", flush=True)
+        requests.post(url, json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": clean_emoji}]}, timeout=5)
     except Exception as e: print(f"❌ [Like] 请求异常: {e}", flush=True)
 
 async def cmd_start(update: Update, context):
@@ -273,14 +274,16 @@ async def on_my_chat_member(update: Update, context):
         chat = update.effective_chat
         status = update.my_chat_member.new_chat_member.status
         if chat.type in ['group', 'supergroup'] and status in ['administrator', 'member']:
-            g = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
-            if not g:
-                g = BotGroup(chat_id=str(chat.id), title=chat.title, username=chat.username, is_active=True)
-                g.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
-                db.session.add(g)
-                db.session.commit()
-                print(f"➕ 新群组注册: {chat.title}")
-            
+            # 使用全局 App Context
+            with global_flask_app.app_context():
+                g = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
+                if not g:
+                    g = BotGroup(chat_id=str(chat.id), title=chat.title, username=chat.username, is_active=True)
+                    g.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
+                    db.session.add(g)
+                    db.session.commit()
+                    print(f"➕ 新群组注册: {chat.title}")
+                
             domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '')
             if domain:
                 token = jwt.encode({'uid': chat.id, 'exp': time.time()+86400*7}, os.getenv('SECRET_KEY', 'secret'), algorithm='HS256')
@@ -290,135 +293,152 @@ async def on_my_chat_member(update: Update, context):
     except Exception as e: print(f"Error in on_my_chat_member: {e}")
 
 async def on_message(update: Update, context):
+    if not global_flask_app: return
     try:
         msg = update.effective_message
         chat = update.effective_chat
         user = update.effective_user
         if not msg.text or not chat: return
 
-        # 1. 自动点赞
-        group = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
-        if group:
-            conf = get_group_conf(group)
-            if conf.get('auto_like'):
+        # 使用全局 App Context
+        with global_flask_app.app_context():
+            # 1. 自动点赞
+            group = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
+            if group:
+                conf = get_group_conf(group)
+                if conf.get('auto_like'):
+                    db_user = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
+                    if db_user:
+                        emoji = conf.get('like_emoji', '❤️')
+                        # 在线程中执行阻塞请求，避免卡顿
+                        asyncio.get_running_loop().run_in_executor(None, do_like, chat.id, msg.message_id, emoji)
+
+            if not group: return
+            txt = msg.text.strip()
+            
+            # 2. 打卡
+            checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
+            if conf.get('checkin_open') and txt in checkin_cmds:
                 db_user = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
-                if db_user:
-                     emoji = conf.get('like_emoji', '❤️')
-                     do_like(chat.id, msg.message_id, emoji)
+                if not db_user:
+                    await msg.reply_html(conf.get('msg_not_registered', '未认证'))
+                else:
+                    db_user.checkin_time = datetime.now()
+                    db_user.online = True
+                    db.session.commit()
+                    r = await msg.reply_html(conf.get('msg_checkin_success', '打卡成功'))
+                    del_time = safe_int(conf.get('checkin_del_time'), 0)
+                    if del_time > 0:
+                        context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=r)
+                return
 
-        if not group: return
-        txt = msg.text.strip()
-        
-        # 2. 打卡
-        checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
-        if conf.get('checkin_open') and txt in checkin_cmds:
-            db_user = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
-            if not db_user:
-                 await msg.reply_html(conf.get('msg_not_registered', '未认证'))
-            else:
-                 db_user.checkin_time = datetime.now()
-                 db_user.online = True
-                 db.session.commit()
-                 r = await msg.reply_html(conf.get('msg_checkin_success', '打卡成功'))
-                 del_time = safe_int(conf.get('checkin_del_time'), 0)
-                 if del_time > 0:
-                     context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=r)
-            return
-
-        # 3. 查询
-        query_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
-        is_search = False
-        kw = None
-        
-        if conf.get('query_open') and txt in query_cmds:
-            is_search = True
-        elif conf.get('query_filter_open'):
-            for cmd in query_cmds:
-                if txt.startswith(cmd + " "):
-                    kw = txt[len(cmd):].strip()
-                    is_search = True
-                    break
-            if not is_search and 0 < len(txt) < 15 and not txt.startswith('/'):
-                kw = txt
+            # 3. 查询
+            query_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
+            is_search = False
+            kw = None
+            
+            if conf.get('query_open') and txt in query_cmds:
                 is_search = True
-        
-        if is_search:
-            fields = get_group_fields(group)
-            text_resp, markup, users = await do_query_page(chat.id, group.id, conf, fields, kw, 1)
-            if users or (not kw and not users):
-                if not text_resp: text_resp = "😢 暂无数据"
-                sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
-                del_time = safe_int(conf.get('query_del_time'), 60)
-                if del_time > 0:
-                    context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=sent)
+            elif conf.get('query_filter_open'):
+                for cmd in query_cmds:
+                    if txt.startswith(cmd + " "):
+                        kw = txt[len(cmd):].strip()
+                        is_search = True
+                        break
+                if not is_search and 0 < len(txt) < 15 and not txt.startswith('/'):
+                    kw = txt
+                    is_search = True
+            
+            if is_search:
+                fields = get_group_fields(group)
+                # 关键：在这里调用查询，上下文已在上方 with 块中建立
+                text_resp, markup, users = await do_query_page(chat.id, group.id, conf, fields, kw, 1)
+                
+                if users or (not kw and not users):
+                    if not text_resp: text_resp = "😢 暂无数据"
+                    sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
+                    del_time = safe_int(conf.get('query_del_time'), 60)
+                    if del_time > 0:
+                        context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=sent)
 
     except Exception as e:
         print(f"Msg Error: {e}")
 
 # --- 分页逻辑 ---
 async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
-    from app import create_app
-    with create_app().app_context():
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        base = GroupUser.query.filter(GroupUser.group_id == group_id, GroupUser.online == True)
-        
-        if kw:
-            base = GroupUser.query.filter(GroupUser.group_id == group_id)
-            base = base.filter(GroupUser.profile_data.contains(kw))
-            header = conf.get('msg_filter_header', '🔍 <b>筛选结果：</b>')
-        else:
-            base = base.filter(GroupUser.checkin_time >= today)
-            header = conf.get('msg_query_header', '🔍 <b>今日在线：</b>')
+    # ⚡️ 修复：移除 create_app()，假定外部已建立 Context，或者在这里使用全局 app
+    # 为了兼容 pagination_callback 和 on_message，这里做个判断
+    # 如果已经在 Context 中（如 on_message 调用），此代码块复用 Context 还是会正常工作？
+    # Flask SQLAlchemy 的 Context 是 Thread Local 的。
+    # 因为我们在 async 函数中，建议显式使用 global_flask_app
+    
+    if not global_flask_app: return None, None, None
+
+    # 使用 run_in_executor 避免阻塞 Async Loop
+    def _sync_query():
+        with global_flask_app.app_context():
+            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            base = GroupUser.query.filter(GroupUser.group_id == group_id, GroupUser.online == True)
             
-        # ⚡️ 修复点：确保排序不报错
-        users = base.order_by(GroupUser.id.desc()).all()
-        if not users: return None, None, None
-        
-        page_size = safe_int(conf.get('page_size'), 10)
-        total_pages = math.ceil(len(users) / page_size) or 1
-        if page > total_pages: page = total_pages
-        if page < 1: page = 1
-        
-        start = (page - 1) * page_size
-        current_users = users[start:start+page_size]
-        
-        tpl = conf.get('template', '{tg_id}')
-        f_map = {f['key']: f['label'] for f in fields}
-        lines = []
-        for idx, u in enumerate(current_users):
-            try:
-                d = json.loads(u.profile_data or '{}')
-                l = tpl.replace("{onlineEmoji}", conf.get('online_emoji',''))
-                for k, lbl in f_map.items(): l = l.replace(f"{{{lbl}}}", str(d.get(k,'')))
-                l = l.replace("{序号}", str(start + idx + 1))
-                l = l.replace("{tg_id}", str(u.tg_id))
-                lines.append(re.sub(r'\{.*?\}', '', l))
-            except: continue
+            if kw:
+                base = GroupUser.query.filter(GroupUser.group_id == group_id)
+                base = base.filter(GroupUser.profile_data.contains(kw))
+                header = conf.get('msg_filter_header', '🔍 <b>筛选结果：</b>')
+            else:
+                base = base.filter(GroupUser.checkin_time >= today)
+                header = conf.get('msg_query_header', '🔍 <b>今日在线：</b>')
+                
+            users = base.order_by(GroupUser.id.desc()).all()
+            if not users: return None, None, None
             
-        text = header + "\n\n" + "\n".join(lines)
-        
-        buttons = []
-        nav_row = []
-        safe_kw = kw if kw else "None"
-        if page > 1: nav_row.append(InlineKeyboardButton("⬅️", callback_data=f"pg|{page-1}|{safe_kw}"))
-        nav_row.append(InlineKeyboardButton(f"{page}/{total_pages}", callback_data="noop"))
-        if page < total_pages: nav_row.append(InlineKeyboardButton("➡️", callback_data=f"pg|{page+1}|{safe_kw}"))
-        if nav_row: buttons.append(nav_row)
-        
-        custom_btns = conf.get('custom_buttons', '')
-        if custom_btns:
-            try:
-                btn_list = json.loads(custom_btns)
-                row = []
-                for btn in btn_list:
-                    row.append(InlineKeyboardButton(btn['text'], url=btn['url']))
-                    if len(row) == 2:
-                        buttons.append(row)
-                        row = []
-                if row: buttons.append(row)
-            except: pass
+            page_size = safe_int(conf.get('page_size'), 10)
+            total_pages = math.ceil(len(users) / page_size) or 1
+            if page > total_pages: page = total_pages
+            if page < 1: page = 1
             
-        return text, InlineKeyboardMarkup(buttons), users
+            start = (page - 1) * page_size
+            current_users = users[start:start+page_size]
+            
+            tpl = conf.get('template', '{tg_id}')
+            f_map = {f['key']: f['label'] for f in fields}
+            lines = []
+            for idx, u in enumerate(current_users):
+                try:
+                    d = json.loads(u.profile_data or '{}')
+                    l = tpl.replace("{onlineEmoji}", conf.get('online_emoji',''))
+                    for k, lbl in f_map.items(): l = l.replace(f"{{{lbl}}}", str(d.get(k,'')))
+                    l = l.replace("{序号}", str(start + idx + 1))
+                    l = l.replace("{tg_id}", str(u.tg_id))
+                    lines.append(re.sub(r'\{.*?\}', '', l))
+                except: continue
+                
+            text = header + "\n\n" + "\n".join(lines)
+            
+            buttons = []
+            nav_row = []
+            safe_kw = kw if kw else "None"
+            if page > 1: nav_row.append(InlineKeyboardButton("⬅️", callback_data=f"pg|{page-1}|{safe_kw}"))
+            nav_row.append(InlineKeyboardButton(f"{page}/{total_pages}", callback_data="noop"))
+            if page < total_pages: nav_row.append(InlineKeyboardButton("➡️", callback_data=f"pg|{page+1}|{safe_kw}"))
+            if nav_row: buttons.append(nav_row)
+            
+            custom_btns = conf.get('custom_buttons', '')
+            if custom_btns:
+                try:
+                    btn_list = json.loads(custom_btns)
+                    row = []
+                    for btn in btn_list:
+                        row.append(InlineKeyboardButton(btn['text'], url=btn['url']))
+                        if len(row) == 2:
+                            buttons.append(row)
+                            row = []
+                    if row: buttons.append(row)
+                except: pass
+                
+            return text, InlineKeyboardMarkup(buttons), users
+
+    # 在 Executor 中运行同步 DB 操作
+    return await asyncio.get_running_loop().run_in_executor(None, _sync_query)
 
 async def pagination_callback(update: Update, context):
     query = update.callback_query
@@ -429,17 +449,35 @@ async def pagination_callback(update: Update, context):
         kw = parts[2] if parts[2] != "None" else None
         
         chat = update.effective_chat
-        from app import create_app
-        with create_app().app_context():
-            g = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
-            if not g: return await query.answer("Expired")
-            
-            conf = get_group_conf(g)
-            fields = get_group_fields(g)
-            
-            text, markup, _ = await do_query_page(chat.id, g.id, conf, fields, kw, page)
-            if text:
-                await query.edit_message_text(text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
+        
+        # ⚡️ 修复：使用全局 Flask App
+        if not global_flask_app: return await query.answer("System Starting...")
+
+        async def _get_conf():
+             # 简单的 DB 读取也放到 executor 或者是直接 wrap
+             with global_flask_app.app_context():
+                g = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
+                if not g: return None, None, None
+                return g.id, get_group_conf(g), get_group_fields(g)
+
+        gid, conf, fields = await asyncio.get_running_loop().run_in_executor(None, lambda: 
+            _get_conf() if asyncio.iscoroutinefunction(_get_conf) is False else None
+        )
+        
+        # 上面 lambda 写法太绕，直接用同步函数包装即可：
+        def _get_group_info():
+            with global_flask_app.app_context():
+                g = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
+                if not g: return None, None, None
+                return g.id, get_group_conf(g), get_group_fields(g)
+        
+        res = await asyncio.get_running_loop().run_in_executor(None, _get_group_info)
+        if not res or not res[0]: return await query.answer("Expired")
+        gid, conf, fields = res
+
+        text, markup, _ = await do_query_page(chat.id, gid, conf, fields, kw, page)
+        if text:
+            await query.edit_message_text(text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
     except Exception as e: 
         print(f"Page Error: {e}")
     await query.answer()
