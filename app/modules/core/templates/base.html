@@ -67,19 +67,11 @@
                     </ul>
                 </div>
             </nav>
-            
-            <!-- 有侧边栏时的内容区 -->
-            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
-                {% block content %}{% endblock %}
-            </main>
-            
-            {% else %}
-            
-            <!-- 无侧边栏时的全屏内容区 -->
-            <main class="col-md-12 ms-sm-auto col-lg-12 px-md-4">
-                {% block content %}{% endblock %}
-            </main>
             {% endif %}
+
+            <main class="{% if session.get('logged_in') %}col-md-9 ms-sm-auto col-lg-10{% else %}col-md-12 ms-sm-auto col-lg-12{% endif %} px-md-4">
+                {% block content %}{% endblock %}
+            </main>
         </div>
     </div>
 
