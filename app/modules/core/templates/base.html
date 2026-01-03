@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Manager</title>
+    <!-- Bootstrap 5 (为了兼容现有的 JS 逻辑，我们用 BS5 但写成 BS4 的朴素风格) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-size: .875rem; }
+        .sidebar { position: fixed; top: 0; bottom: 0; left: 0; z-index: 100; padding: 48px 0 0; box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1); }
+        .sidebar-sticky { position: relative; top: 0; height: calc(100vh - 48px); padding-top: .5rem; overflow-x: hidden; overflow-y: auto; }
+        .navbar-brand { padding-top: .75rem; padding-bottom: .75rem; font-size: 1rem; background-color: rgba(0, 0, 0, .25); box-shadow: inset -1px 0 0 rgba(0, 0, 0, .25); }
+        .navbar .navbar-toggler { top: .25rem; right: 1rem; }
+        main { padding-top: 20px; }
+    </style>
+</head>
+<body>
+    <header class="navbar navbar-dark sticky-top bg-dark flex-md-nowrap p-0 shadow">
+        <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Bot Manager</a>
+        <div class="navbar-nav">
+            <div class="nav-item text-nowrap">
+                {% if session.get('logged_in') %}
+                <a class="nav-link px-3" href="/core/logout">退出登录</a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- ⚡️ 关键修复：只有当 current_group 存在时，才显示侧边栏 -->
+            {% if session.get('logged_in') and current_group %}
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
+                <div class="position-sticky pt-3">
+                    <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-1 text-muted">
+                        <span>当前群组: {{ current_group.title }}</span>
+                    </h6>
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link {% if page == 'dashboard' %}active{% endif %}" href="/core/group/{{ current_group.id }}/dashboard">
+                                <i class="fa-solid fa-chart-line"></i> 数据概览
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if page == 'users' %}active{% endif %}" href="/core/group/{{ current_group.id }}/users">
+                                <i class="fa-solid fa-users"></i> 用户管理
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if page == 'fields' %}active{% endif %}" href="/core/group/{{ current_group.id }}/fields">
+                                <i class="fa-solid fa-list"></i> 资料字段
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if page == 'settings' %}active{% endif %}" href="/core/group/{{ current_group.id }}/settings">
+                                <i class="fa-solid fa-cog"></i> 功能配置
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-danger" href="/core/select_group">
+                                <i class="fa-solid fa-exchange-alt"></i> 切换群组
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+            
+            <!-- 有侧边栏时，主内容向右偏移 -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                {% block content %}{% endblock %}
+            </main>
+            
+            {% else %}
+            
+            <!-- 没有侧边栏时 (比如选择群组页)，主内容全屏 -->
+            <main class="col-md-12 ms-sm-auto col-lg-12 px-md-4">
+                {% block full_content %}
+                    <!-- 为了兼容 select_group.html 的 block content 写法 -->
+                    {% block content %}{% endblock %}
+                {% endblock %}
+            </main>
+            {% endif %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        async function postApi(url, data) {
+            try {
+                let res = await fetch(url, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                let json = await res.json();
+                if (json.status === 'ok') {
+                    alert('操作成功');
+                    location.reload();
+                } else {
+                    alert('操作失败: ' + (json.msg || '未知错误'));
+                }
+            } catch (e) {
+                alert('网络请求错误');
+            }
+        }
+    </script>
+</body>
+</html>
