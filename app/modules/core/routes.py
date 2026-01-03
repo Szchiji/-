@@ -1,11 +1,11 @@
 from flask import Blueprint, render_template, request, redirect, session, jsonify
 from app import db
-from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM
+from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM, AuthSession
 from app.services import sanitize_html_for_telegram
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions, ChatMember
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ChatMemberHandler, filters
 from sqlalchemy.orm import joinedload
-import os, jwt, time, json, asyncio, re, requests, math
+import os, jwt, time, json, asyncio, re, requests, math, secrets, string
 from datetime import datetime, timedelta
 import pytz
 
@@ -21,9 +21,18 @@ EXPIRATION_CHECK_INTERVAL = 3600  # Check expired users every hour (in seconds)
 JWT_TOKEN_EXPIRY_DAYS = 7  # JWT token validity for group access (in days)
 MAX_CONCURRENT_BANS = 5  # Maximum concurrent ban operations to avoid rate limits
 EXPIRED_USERS_BATCH_SIZE = 100  # Process expired users in batches to avoid memory issues
+AUTH_SESSION_EXPIRY_MINUTES = 5  # Authentication session expiry time
 
 # Beijing timezone
 BEIJING_TZ = pytz.timezone('Asia/Shanghai')
+
+def generate_verification_code():
+    """Generate a random 6-digit verification code"""
+    return ''.join(secrets.choice(string.digits) for _ in range(6))
+
+def generate_session_token():
+    """Generate a secure random session token"""
+    return secrets.token_urlsafe(32)
 
 def get_beijing_now():
     """Get current time in Beijing timezone as naive datetime (for database storage)"""
@@ -359,6 +368,63 @@ def magic_login():
         print(f"Login error: {e}")
         return "Invalid Token", 403
 
+@core_bp.route('/auth_verify/<session_token>')
+def auth_verify_page(session_token):
+    """Display verification page with code"""
+    if not global_flask_app:
+        return "System not ready", 503
+    
+    with global_flask_app.app_context():
+        auth_session = AuthSession.query.filter_by(session_token=session_token).first()
+        
+        if not auth_session:
+            return "无效的验证链接", 404
+        
+        # Check if session has expired
+        if get_beijing_now() > auth_session.expires_at:
+            return "验证链接已过期", 403
+        
+        # Check if already verified
+        if auth_session.is_verified:
+            return redirect('/core/select_group')
+        
+        return render_template('auth_verify.html', 
+                             code=auth_session.verification_code,
+                             session_token=session_token)
+
+@core_bp.route('/api/check_auth_status', methods=['POST'])
+def api_check_auth_status():
+    """Check if authentication session has been verified"""
+    if not session.get('logged_in'):
+        data = request.json
+        session_token = data.get('session_token')
+        
+        if not session_token:
+            return jsonify({'status': 'error', 'msg': 'Missing session_token'})
+        
+        auth_session = AuthSession.query.filter_by(session_token=session_token).first()
+        
+        if not auth_session:
+            return jsonify({'status': 'error', 'msg': 'Invalid session'})
+        
+        # Check if expired
+        if get_beijing_now() > auth_session.expires_at:
+            return jsonify({'status': 'expired'})
+        
+        # Check if verified
+        if auth_session.is_verified:
+            # Set session as logged in
+            session['logged_in'] = True
+            return jsonify({
+                'status': 'verified',
+                'redirect_url': '/core/select_group'
+            })
+        
+        return jsonify({'status': 'pending'})
+    else:
+        return jsonify({'status': 'verified', 'redirect_url': '/core/select_group'})
+
+
 @core_bp.route('/logout')
 def logout():
     session.clear()
@@ -529,13 +595,53 @@ async def cmd_start(update: Update, context):
     print(f"✅ /start 命令被触发，用户 ID: {update.effective_user.id}")
     user_id = update.effective_user.id
     admin_id = safe_int(os.getenv('ADMIN_ID', 0))
+    
     if user_id == admin_id:
-        token = jwt.encode({'uid': user_id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY', 'default_secret_key'), algorithm='HS256')
+        # Create authentication session for admin
+        def _create_auth_session():
+            with global_flask_app.app_context():
+                # Clean up old sessions for this user
+                AuthSession.query.filter_by(user_id=user_id).delete()
+                
+                # Create new auth session
+                session_token = generate_session_token()
+                verification_code = generate_verification_code()
+                expires_at = get_beijing_now() + timedelta(minutes=AUTH_SESSION_EXPIRY_MINUTES)
+                
+                auth_session = AuthSession(
+                    user_id=user_id,
+                    session_token=session_token,
+                    verification_code=verification_code,
+                    is_verified=False,
+                    expires_at=expires_at
+                )
+                db.session.add(auth_session)
+                db.session.commit()
+                
+                return session_token
+        
+        # Create session in executor to avoid blocking
+        session_token = await asyncio.get_running_loop().run_in_executor(None, _create_auth_session)
+        
         domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')
-        url = f"https://{domain}/core/magic_login?token={token}" if domain else f"/core/magic_login?token={token}"
-        await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
+        if domain:
+            verify_url = f"https://{domain}/core/auth_verify/{session_token}"
+        else:
+            verify_url = f"http://localhost:5000/core/auth_verify/{session_token}"
+        
+        # Create inline keyboard with button
+        keyboard = [[InlineKeyboardButton("🔐 点击验证身份", url=verify_url)]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_html(
+            "👋 <b>欢迎，管理员！</b>\n\n"
+            "请点击下方按钮进入身份验证页面，\n"
+            "将页面上的验证码发送给我以完成登录。",
+            reply_markup=reply_markup
+        )
     else:
         await update.message.reply_html(f"👋 你好！我是打卡机器人。\n你的 ID 是：<code>{user_id}</code>")
+
 
 async def on_my_chat_member(update: Update, context):
     try:
@@ -578,6 +684,41 @@ async def on_message(update: Update, context):
         user = update.effective_user
         if not msg.text or not chat: return
 
+        txt = msg.text.strip()
+        
+        # Check if this is a verification code from admin in private chat
+        if chat.type == 'private':
+            admin_id = safe_int(os.getenv('ADMIN_ID', 0))
+            if user.id == admin_id and txt.isdigit() and len(txt) == 6:
+                # Try to verify the code
+                def _verify_code():
+                    with global_flask_app.app_context():
+                        auth_session = AuthSession.query.filter_by(
+                            user_id=user.id,
+                            verification_code=txt,
+                            is_verified=False
+                        ).first()
+                        
+                        if auth_session:
+                            # Check if not expired
+                            if get_beijing_now() <= auth_session.expires_at:
+                                auth_session.is_verified = True
+                                db.session.commit()
+                                return True
+                            else:
+                                return False
+                        return None
+                
+                result = await asyncio.get_running_loop().run_in_executor(None, _verify_code)
+                
+                if result is True:
+                    await msg.reply_html("✅ <b>验证成功！</b>\n\n网页将自动跳转到管理后台。")
+                    return
+                elif result is False:
+                    await msg.reply_html("⚠️ <b>验证码已过期</b>\n\n请重新发送 /start 获取新的验证码。")
+                    return
+                # If result is None, fall through to normal message processing
+
         # 使用全局 App Context
         with global_flask_app.app_context():
             # 1. 自动点赞
@@ -592,8 +733,6 @@ async def on_message(update: Update, context):
                     emoji = conf.get('like_emoji', '❤️')
                     # 在线程中执行阻塞请求，避免卡顿
                     asyncio.get_running_loop().run_in_executor(None, do_like, chat.id, msg.message_id, emoji)
-
-            txt = msg.text.strip()
             
             # 2. 打卡
             checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
