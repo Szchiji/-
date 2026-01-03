@@ -497,17 +497,6 @@ async def pagination_callback(update: Update, context):
         # ⚡️ 修复：使用全局 Flask App
         if not global_flask_app: return await query.answer("System Starting...")
 
-        async def _get_conf():
-             # 简单的 DB 读取也放到 executor 或者是直接 wrap
-             with global_flask_app.app_context():
-                g = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
-                if not g: return None, None, None
-                return g.id, get_group_conf(g), get_group_fields(g)
-
-        gid, conf, fields = await asyncio.get_running_loop().run_in_executor(None, lambda: 
-            _get_conf() if asyncio.iscoroutinefunction(_get_conf) is False else None
-        )
-        
         # 上面 lambda 写法太绕，直接用同步函数包装即可：
         def _get_group_info():
             with global_flask_app.app_context():
