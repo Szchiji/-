@@ -122,13 +122,25 @@ def page_settings(gid):
 def api_toggle_group():
     if not session.get('logged_in'): return jsonify({'status':'error','msg':'Auth required'})
     d = request.json
-    g = BotGroup.query.get(d['id'])
-    if not g: return jsonify({'status':'error'})
+    if not d or 'id' not in d or 'action' not in d:
+        return jsonify({'status':'error','msg':'Missing parameters'})
+    
+    try:
+        group_id = int(d['id'])
+    except (ValueError, TypeError):
+        return jsonify({'status':'error','msg':'Invalid group ID'})
+    
+    g = BotGroup.query.get(group_id)
+    if not g: return jsonify({'status':'error','msg':'Group not found'})
+    
     if d['action'] == 'delete':
         GroupUser.query.filter_by(group_id=g.id).delete()
         db.session.delete(g)
     elif d['action'] == 'toggle':
         g.is_active = not g.is_active
+    else:
+        return jsonify({'status':'error','msg':'Invalid action'})
+    
     db.session.commit()
     return jsonify({'status':'ok'})
 
