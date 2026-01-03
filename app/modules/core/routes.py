@@ -474,6 +474,7 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
 
     # 使用 run_in_executor 避免阻塞 Async Loop
     def _sync_query():
+        nonlocal page
         with global_flask_app.app_context():
             today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
             base = GroupUser.query.filter(GroupUser.group_id == group_id, GroupUser.online == True)
