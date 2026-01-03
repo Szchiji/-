@@ -127,6 +127,8 @@ def api_toggle_group():
     if d['action'] == 'delete':
         GroupUser.query.filter_by(group_id=g.id).delete()
         db.session.delete(g)
+    elif d['action'] == 'toggle':
+        g.is_active = not g.is_active
     db.session.commit()
     return jsonify({'status':'ok'})
 
@@ -383,14 +385,16 @@ async def on_message(update: Update, context):
         with global_flask_app.app_context():
             # 1. 自动点赞
             group = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
-            if group:
-                conf = get_group_conf(group)
-                if conf.get('auto_like'):
-                    db_user = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
-                    if db_user:
-                        emoji = conf.get('like_emoji', '❤️')
-                        # 在线程中执行阻塞请求，避免卡顿
-                        asyncio.get_running_loop().run_in_executor(None, do_like, chat.id, msg.message_id, emoji)
+            if not group or not group.is_active:
+                return
+            
+            conf = get_group_conf(group)
+            if conf.get('auto_like'):
+                db_user = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
+                if db_user:
+                    emoji = conf.get('like_emoji', '❤️')
+                    # 在线程中执行阻塞请求，避免卡顿
+                    asyncio.get_running_loop().run_in_executor(None, do_like, chat.id, msg.message_id, emoji)
 
             if not group: return
             txt = msg.text.strip()
