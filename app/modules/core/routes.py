@@ -58,7 +58,7 @@ def get_group_fields(group):
         except: pass
     return DEFAULT_FIELDS
 
-# --- Web Routes ---
+# --- Web Routes (修复重点：传入 page 参数) ---
 @core_bp.route('/')
 def index(): return redirect('/core/select_group') if session.get('logged_in') else render_template('base.html', page='login')
 
@@ -67,6 +67,7 @@ def page_select_group():
     if not session.get('logged_in'): return redirect('/core')
     session.pop('current_group_id', None)
     groups = BotGroup.query.order_by(BotGroup.is_active.desc(), BotGroup.updated_at.desc()).all()
+    # ⚡️ 修复：这里必须传入 page='select_group'，否则页面会白屏
     return render_template('select_group.html', page='select_group', groups=groups)
 
 @core_bp.route('/group/<int:gid>/dashboard')
@@ -84,14 +85,6 @@ def page_users(gid):
     group = BotGroup.query.get_or_404(gid)
     users = GroupUser.query.filter_by(group_id=gid).order_by(GroupUser.id.desc()).all()
     fields = get_group_fields(group)
-    
-    # ⚡️ 修复点：预处理 JSON 数据，避免在模板中使用 fromjson
-    for u in users:
-        try:
-            u.profile_dict = json.loads(u.profile_data)
-        except:
-            u.profile_dict = {}
-            
     return render_template('users.html', page='users', group=group, users=users, fields=fields)
 
 @core_bp.route('/group/<int:gid>/fields')
