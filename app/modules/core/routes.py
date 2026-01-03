@@ -122,11 +122,29 @@ def page_settings(gid):
 def api_toggle_group():
     if not session.get('logged_in'): return jsonify({'status':'error','msg':'Auth required'})
     d = request.json
-    g = BotGroup.query.get(d['id'])
-    if not g: return jsonify({'status':'error'})
+    if not d:
+        return jsonify({'status':'error','msg':'Missing request body'})
+    if 'id' not in d:
+        return jsonify({'status':'error','msg':'Missing group ID'})
+    if 'action' not in d:
+        return jsonify({'status':'error','msg':'Missing action'})
+    
+    try:
+        group_id = int(d['id'])
+    except (ValueError, TypeError):
+        return jsonify({'status':'error','msg':'Invalid group ID'})
+    
+    g = BotGroup.query.get(group_id)
+    if not g: return jsonify({'status':'error','msg':'Group not found'})
+    
     if d['action'] == 'delete':
         GroupUser.query.filter_by(group_id=g.id).delete()
         db.session.delete(g)
+    elif d['action'] == 'toggle':
+        g.is_active = not g.is_active
+    else:
+        return jsonify({'status':'error','msg':'Invalid action'})
+    
     db.session.commit()
     return jsonify({'status':'ok'})
 
@@ -383,16 +401,17 @@ async def on_message(update: Update, context):
         with global_flask_app.app_context():
             # 1. 自动点赞
             group = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
-            if group:
-                conf = get_group_conf(group)
-                if conf.get('auto_like'):
-                    db_user = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
-                    if db_user:
-                        emoji = conf.get('like_emoji', '❤️')
-                        # 在线程中执行阻塞请求，避免卡顿
-                        asyncio.get_running_loop().run_in_executor(None, do_like, chat.id, msg.message_id, emoji)
+            if not group or not group.is_active:
+                return
+            
+            conf = get_group_conf(group)
+            if conf.get('auto_like'):
+                db_user = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
+                if db_user:
+                    emoji = conf.get('like_emoji', '❤️')
+                    # 在线程中执行阻塞请求，避免卡顿
+                    asyncio.get_running_loop().run_in_executor(None, do_like, chat.id, msg.message_id, emoji)
 
-            if not group: return
             txt = msg.text.strip()
             
             # 2. 打卡
