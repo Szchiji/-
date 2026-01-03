@@ -84,8 +84,10 @@ def page_users(gid):
     session['current_group_id'] = gid
     group = BotGroup.query.get_or_404(gid)
     users = GroupUser.query.filter_by(group_id=gid).order_by(GroupUser.updated_at.desc()).limit(200).all()
+    # ⚡️ 预处理 JSON，避免模板报错
     for u in users:
-        u.profile_dict = json.loads(u.profile_data) if u.profile_data else {}
+        try: u.profile_dict = json.loads(u.profile_data) if u.profile_data else {}
+        except: u.profile_dict = {}
     return render_template('users.html', page='users', group=group, users=users, fields=get_group_fields(group))
 
 @core_bp.route('/group/<int:gid>/fields')
@@ -121,7 +123,7 @@ def api_save_fields():
     d = request.json
     group = BotGroup.query.get(session['current_group_id'])
     
-    # ⚡️ 修复点：兼容 List 和 Dict 两种格式
+    # ⚡️ 兼容 List 和 Dict 两种格式，防止 500 报错
     fields_data = d.get('fields', d) if isinstance(d, dict) else d
     
     group.fields_config = json.dumps(fields_data, ensure_ascii=False)
@@ -158,7 +160,6 @@ def api_save_user():
         # 解封
         if add > 0 and u.is_banned:
             u.is_banned = False
-            # 尝试解封 TG
             try: global_ptb_app.bot.restrict_chat_member(chat_id=BotGroup.query.get(gid).chat_id, user_id=u.tg_id, permissions=ChatPermissions.all_permissions())
             except: pass
 
@@ -190,9 +191,8 @@ def api_push_user():
         text = tpl.replace('{tg_id}', str(user.tg_id)).replace('{onlineEmoji}', '🟢' if user.online else '🔴').replace('{序号}', str(user.id))
         
         p = json.loads(user.profile_data or '{}')
-        for k,v in p.items(): text = text.replace(f'{{{k}}}', str(v)) # 简单替换
+        for k,v in p.items(): text = text.replace(f'{{{k}}}', str(v)) 
         
-        # 再次查找字段Label替换 (支持 {姓名} 这种写法)
         fields = get_group_fields(group)
         for f in fields:
             val = p.get(f['key'], '')
@@ -221,14 +221,16 @@ def logout():
     session.clear()
     return "已退出，请关闭窗口。"
 
-# --- BOT Logic ---
+# =======================
+# 🤖 机器人逻辑 (核心)
+# =======================
+
 async def run_bot():
     token = os.getenv('TG_BOT_TOKEN')
     if not token: 
         print("⚠️ 未设置 TG_BOT_TOKEN")
         return
 
-    # 全局保存 loop
     global global_bot_loop
     global_bot_loop = asyncio.get_running_loop()
 
@@ -238,31 +240,53 @@ async def run_bot():
     global global_ptb_app
     global_ptb_app = app
 
-    # Handlers
     app.add_handler(ChatMemberHandler(on_my_chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
+    app.add_handler(CallbackQueryHandler(pagination_callback)) # 翻页
     app.add_handler(CommandHandler("start", cmd_start))
     
-    # 极简模式：不跑 polling，只初始化
     await app.initialize()
     await app.start()
     print("✅ Bot 初始化完成 (Webhook 模式)", flush=True)
 
-# --- Bot Callbacks ---
+# 独立点赞函数
+def do_like(chat_id, message_id, emoji):
+    token = os.getenv('TG_BOT_TOKEN')
+    if not token or not emoji: return
+    clean_emoji = emoji.strip()
+    print(f"👍 [Like] 准备点赞: {clean_emoji}", flush=True)
+    try: 
+        url = f"https://api.telegram.org/bot{token}/setMessageReaction"
+        resp = requests.post(url, json={"chat_id": chat_id, "message_id": message_id, "reaction": [{"type": "emoji", "emoji": clean_emoji}]}, timeout=5)
+        if resp.status_code == 200: print("✅ [Like] 成功！", flush=True)
+        else: print(f"❌ [Like] 失败: {resp.text}", flush=True)
+    except Exception as e: print(f"❌ [Like] 请求异常: {e}", flush=True)
+
+async def cmd_start(update: Update, context):
+    """管理员获取后台链接"""
+    user_id = update.effective_user.id
+    admin_id = safe_int(os.getenv('ADMIN_ID', 0))
+    if user_id == admin_id:
+        token = jwt.encode({'uid': user_id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY', 'secret'), algorithm='HS256')
+        domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')
+        url = f"https://{domain}/core/magic_login?token={token}" if domain else f"/core/magic_login?token={token}"
+        await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
+    else:
+        await update.message.reply_html(f"👋 你好！我是打卡机器人。\n你的 ID 是：<code>{user_id}</code>")
+
 async def on_my_chat_member(update: Update, context):
-    """当机器人被拉入群组，自动注册"""
     try:
         chat = update.effective_chat
         status = update.my_chat_member.new_chat_member.status
         if chat.type in ['group', 'supergroup'] and status in ['administrator', 'member']:
             g = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
             if not g:
-                g = BotGroup(chat_id=str(chat.id), title=chat.title, username=chat.username)
+                g = BotGroup(chat_id=str(chat.id), title=chat.title, username=chat.username, is_active=True)
+                g.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False) # 初始化默认字段
                 db.session.add(g)
                 db.session.commit()
                 print(f"➕ 新群组注册: {chat.title}")
             
-            # 发送管理链接
             domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '')
             if domain:
                 token = jwt.encode({'uid': chat.id, 'exp': time.time()+86400*7}, os.getenv('SECRET_KEY', 'secret'), algorithm='HS256')
@@ -272,66 +296,168 @@ async def on_my_chat_member(update: Update, context):
     except Exception as e: print(f"Error in on_my_chat_member: {e}")
 
 async def on_message(update: Update, context):
-    """核心消息处理：打卡、查询、点赞"""
     try:
         msg = update.effective_message
         chat = update.effective_chat
         user = update.effective_user
         if not msg.text or not chat: return
 
-        # 1. 自动点赞 (Auto Like)
-        # 只要是群组消息，就检查配置
+        # 1. 自动点赞
         group = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
         if group:
             conf = get_group_conf(group)
-            
-            # 只有开启了 auto_like 且设置了 emoji 才点赞
-            if conf.get('auto_like') and conf.get('like_emoji'):
-                # 只有“认证用户”才点赞？或者所有人都点？
-                # 逻辑：先检查是否认证
+            if conf.get('auto_like'):
+                # 判断是否认证用户
                 db_user = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
-                if db_user and db_user.profile_data: # 简单判断：有资料就是认证用户
-                    emoji = conf.get('like_emoji')
-                    print(f"👍 [Like] 准备点赞: {emoji} (原始: '{emoji}')", flush=True)
-                    try:
-                        # 核心点赞逻辑
-                        await msg.set_reaction(reaction=emoji)
-                        print("✅ [Like] 成功！", flush=True)
-                    except Exception as e:
-                        print(f"❌ [Like] 失败: {e}", flush=True)
+                # 如果资料不为空，或者 simply 只要在库里就算认证
+                if db_user:
+                     emoji = conf.get('like_emoji', '❤️')
+                     do_like(chat.id, msg.message_id, emoji)
 
-        # ... (后续打卡、查询逻辑省略，保持原样即可) ...
-        # (因为 routes.py 很长，这里只展示了修复 save_fields 和 Auto Like 的部分，
-        # 如果您需要完整的 routes.py 覆盖，我可以把下面的也补全)
-        
-        # 简单补全后续逻辑以保证文件完整性：
         if not group: return
-        conf = get_group_conf(group)
         txt = msg.text.strip()
-
-        # 打卡
-        if conf.get('checkin_open') and txt == conf.get('checkin_cmd'):
-            # (简化的打卡逻辑占位，实际逻辑保持不变)
+        
+        # 2. 打卡
+        checkin_cmds = [c.strip() for c in conf.get('checkin_cmd', '打卡').split(',')]
+        if conf.get('checkin_open') and txt in checkin_cmds:
             db_user = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
             if not db_user:
-                 await msg.reply_text(conf.get('msg_not_registered', '未认证'))
+                 await msg.reply_html(conf.get('msg_not_registered', '未认证'))
             else:
-                 # 更新时间
+                 db_user.checkin_time = datetime.now()
                  db_user.online = True
-                 db_user.last_active = datetime.now()
                  db.session.commit()
-                 
-                 reply = await msg.reply_text(conf.get('msg_checkin_success', '打卡成功'))
-                 # 删除消息
+                 r = await msg.reply_html(conf.get('msg_checkin_success', '打卡成功'))
                  del_time = safe_int(conf.get('checkin_del_time'), 0)
                  if del_time > 0:
-                     await asyncio.sleep(del_time)
-                     try: await reply.delete()
-                     except: pass
-                     try: await msg.delete()
-                     except: pass
+                     context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=r)
+            return
+
+        # 3. 查询
+        query_cmds = [c.strip() for c in conf.get('query_cmd', '查询').split(',')]
+        is_search = False
+        kw = None
         
-        # 查询 (略)
+        if conf.get('query_open') and txt in query_cmds:
+            is_search = True
+        elif conf.get('query_filter_open'):
+            # 关键词前缀匹配，例如 "查询 深圳"
+            for cmd in query_cmds:
+                if txt.startswith(cmd + " "):
+                    kw = txt[len(cmd):].strip()
+                    is_search = True
+                    break
+            # 或者直接匹配 (如果不带斜杠且长度合适)
+            if not is_search and 0 < len(txt) < 15 and not txt.startswith('/'):
+                kw = txt
+                is_search = True
+        
+        if is_search:
+            fields = get_group_fields(group)
+            text_resp, markup, users = await do_query_page(chat.id, group.id, conf, fields, kw, 1)
+            # 如果有结果，或者是在明确查全部
+            if users or (not kw and not users):
+                if not text_resp: text_resp = "😢 暂无数据"
+                sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
+                del_time = safe_int(conf.get('query_del_time'), 60)
+                if del_time > 0:
+                    context.job_queue.run_once(lambda c: c.job.data.delete(), del_time, data=sent)
 
     except Exception as e:
         print(f"Msg Error: {e}")
+
+# --- 分页逻辑 ---
+async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
+    from app import create_app
+    with create_app().app_context():
+        # 这里定义查询逻辑
+        # 默认查今日已打卡的
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        base = GroupUser.query.filter(GroupUser.group_id == group_id, GroupUser.online == True)
+        
+        # 如果是搜关键词，就不限“今日”，而是搜全部库
+        if kw:
+            base = GroupUser.query.filter(GroupUser.group_id == group_id) # 重置base
+            base = base.filter(GroupUser.profile_data.contains(kw))
+            header = conf.get('msg_filter_header', '🔍 <b>筛选结果：</b>')
+        else:
+            base = base.filter(GroupUser.checkin_time >= today)
+            header = conf.get('msg_query_header', '🔍 <b>今日在线：</b>')
+            
+        users = base.order_by(GroupUser.checkin_time.desc()).all()
+        if not users: return None, None, None
+        
+        page_size = safe_int(conf.get('page_size'), 10)
+        total_pages = math.ceil(len(users) / page_size) or 1
+        if page > total_pages: page = total_pages
+        if page < 1: page = 1
+        
+        # 构建文本
+        start = (page - 1) * page_size
+        current_users = users[start:start+page_size]
+        
+        tpl = conf.get('template', '{tg_id}')
+        f_map = {f['key']: f['label'] for f in fields}
+        lines = []
+        for idx, u in enumerate(current_users):
+            try:
+                d = json.loads(u.profile_data or '{}')
+                l = tpl.replace("{onlineEmoji}", conf.get('online_emoji',''))
+                for k, lbl in f_map.items(): l = l.replace(f"{{{lbl}}}", str(d.get(k,'')))
+                l = l.replace("{序号}", str(start + idx + 1))
+                l = l.replace("{tg_id}", str(u.tg_id))
+                lines.append(re.sub(r'\{.*?\}', '', l)) # 清理未匹配的标签
+            except: continue
+            
+        text = header + "\n\n" + "\n".join(lines)
+        
+        # 构建按钮
+        buttons = []
+        nav_row = []
+        safe_kw = kw if kw else "None"
+        if page > 1: nav_row.append(InlineKeyboardButton("⬅️", callback_data=f"pg|{page-1}|{safe_kw}"))
+        nav_row.append(InlineKeyboardButton(f"{page}/{total_pages}", callback_data="noop"))
+        if page < total_pages: nav_row.append(InlineKeyboardButton("➡️", callback_data=f"pg|{page+1}|{safe_kw}"))
+        if nav_row: buttons.append(nav_row)
+        
+        custom_btns = conf.get('custom_buttons', '')
+        if custom_btns:
+            try:
+                btn_list = json.loads(custom_btns)
+                row = []
+                for btn in btn_list:
+                    row.append(InlineKeyboardButton(btn['text'], url=btn['url']))
+                    if len(row) == 2:
+                        buttons.append(row)
+                        row = []
+                if row: buttons.append(row)
+            except: pass
+            
+        return text, InlineKeyboardMarkup(buttons), users
+
+async def pagination_callback(update: Update, context):
+    query = update.callback_query
+    if query.data == "noop": return await query.answer()
+    
+    try:
+        parts = query.data.split('|')
+        page = int(parts[1])
+        kw = parts[2] if parts[2] != "None" else None
+        
+        # 获取群组信息 (复用之前的 safe logic)
+        chat = update.effective_chat
+        from app import create_app
+        with create_app().app_context():
+            g = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
+            if not g: return await query.answer("Expired")
+            
+            conf = get_group_conf(g)
+            fields = get_group_fields(g)
+            
+            text, markup, _ = await do_query_page(chat.id, g.id, conf, fields, kw, page)
+            if text:
+                await query.edit_message_text(text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
+    except Exception as e: 
+        print(f"Page Error: {e}")
+    
+    await query.answer()
