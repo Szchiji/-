@@ -3,6 +3,7 @@ from app import db
 from app.models import BotGroup, GroupUser, DEFAULT_FIELDS, DEFAULT_SYSTEM
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions, ChatMember
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ChatMemberHandler, filters
+from sqlalchemy.orm import joinedload
 import os, jwt, time, json, asyncio, re, requests, math
 from datetime import datetime, timedelta
 import pytz
@@ -373,8 +374,7 @@ async def check_expired_users(context):
             try:
                 now = get_beijing_now()
                 # Find all users whose expiration date has passed and are not yet banned
-                # Using join to avoid N+1 query problem
-                from sqlalchemy.orm import joinedload
+                # Using joinedload to avoid N+1 query problem
                 expired_users = GroupUser.query.options(
                     joinedload(GroupUser.group)
                 ).filter(
@@ -386,57 +386,69 @@ async def check_expired_users(context):
                 if expired_users:
                     print(f"🔍 Found {len(expired_users)} expired users to ban", flush=True)
                 
-                # Batch process users and commit once at the end
-                banned_users = []
+                # Collect users to ban and prepare async operations
+                users_to_ban = []
                 for user in expired_users:
-                    try:
-                        group = user.group if hasattr(user, 'group') else BotGroup.query.get(user.group_id)
-                        if group and group.is_active:
-                            # Ban the user in the group
-                            asyncio.run_coroutine_threadsafe(
-                                context.bot.restrict_chat_member(
-                                    chat_id=group.chat_id,
-                                    user_id=user.tg_id,
-                                    permissions=ChatPermissions(can_send_messages=False)
-                                ),
-                                global_bot_loop
-                            ).result(timeout=5)
-                            
-                            user.is_banned = True
-                            banned_users.append((user, group))
-                            
-                            print(f"⛔️ Banned expired user {user.tg_id} in group {group.title}", flush=True)
-                    except Exception as e:
-                        print(f"Error banning user {user.tg_id}: {e}")
+                    if user.group and user.group.is_active:
+                        users_to_ban.append((user, user.group))
+                
+                if not users_to_ban:
+                    return
+                    
+                # Mark users as banned in database first
+                for user, group in users_to_ban:
+                    user.is_banned = True
                 
                 # Commit all changes at once
-                if banned_users:
-                    db.session.commit()
-                    
-                    # Send notifications after successful commit
-                    for user, group in banned_users:
-                        try:
-                            conf = get_group_conf(group)
-                            ban_msg = conf.get('msg_expired_ban', '⛔️ <b>您的认证已过期，已被暂时禁言。请联系管理员续费。</b>')
-                            # Try to send private message
-                            asyncio.run_coroutine_threadsafe(
-                                context.bot.send_message(
-                                    chat_id=user.tg_id,
-                                    text=ban_msg,
-                                    parse_mode='HTML'
-                                ),
-                                global_bot_loop
-                            ).result(timeout=5)
-                        except Exception as e:
-                            # If private message fails, we don't send to group to avoid spam
-                            print(f"Failed to send ban notification to user {user.tg_id}: {e}")
+                db.session.commit()
+                print(f"✅ Marked {len(users_to_ban)} users as banned in database", flush=True)
+                
+                # Return the list for async processing
+                return users_to_ban
                             
             except Exception as e:
-                print(f"Error in check_expired_users: {e}")
+                print(f"Error in check_expired_users sync part: {e}")
                 db.session.rollback()
+                return None
     
-    # Run in executor to avoid blocking
-    await asyncio.get_running_loop().run_in_executor(None, _sync_check)
+    # Run sync DB operations in executor
+    users_to_ban = await asyncio.get_running_loop().run_in_executor(None, _sync_check)
+    
+    if not users_to_ban:
+        return
+    
+    # Now perform all async Telegram operations concurrently
+    async def ban_user_async(user, group):
+        """Ban a single user and send notification"""
+        try:
+            # Ban the user in the group
+            await context.bot.restrict_chat_member(
+                chat_id=group.chat_id,
+                user_id=user.tg_id,
+                permissions=ChatPermissions(can_send_messages=False)
+            )
+            print(f"⛔️ Banned expired user {user.tg_id} in group {group.title}", flush=True)
+            
+            # Try to send notification to user privately
+            with global_flask_app.app_context():
+                conf = get_group_conf(group)
+                ban_msg = conf.get('msg_expired_ban', '⛔️ <b>您的认证已过期，已被暂时禁言。请联系管理员续费。</b>')
+            
+            try:
+                await context.bot.send_message(
+                    chat_id=user.tg_id,
+                    text=ban_msg,
+                    parse_mode='HTML'
+                )
+            except Exception as e:
+                # If private message fails, we don't send to group to avoid spam
+                print(f"Failed to send ban notification to user {user.tg_id}: {e}")
+                
+        except Exception as e:
+            print(f"Error banning user {user.tg_id}: {e}")
+    
+    # Run all ban operations concurrently
+    await asyncio.gather(*[ban_user_async(user, group) for user, group in users_to_ban], return_exceptions=True)
 
 async def run_bot(app_instance):
     """
