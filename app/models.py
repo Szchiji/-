@@ -20,11 +20,14 @@ class GroupUser(db.Model):
     group_id = db.Column(db.Integer, db.ForeignKey('bot_groups.id'), index=True)
     tg_id = db.Column(db.BigInteger)
     profile_data = db.Column(db.Text, default='{}')
-    expiration_date = db.Column(db.DateTime, nullable=True)
+    expiration_date = db.Column(db.DateTime, nullable=True)  # Consider adding composite index: (expiration_date, is_banned)
     is_banned = db.Column(db.Boolean, default=False)
     checkin_time = db.Column(db.DateTime)
     online = db.Column(db.Boolean, default=False)
     __table_args__ = (db.UniqueConstraint('group_id', 'tg_id', name='_group_user_uc'),)
+    
+    # Relationship to BotGroup for efficient querying
+    group = db.relationship('BotGroup', backref='users', lazy=True)
 
 DEFAULT_FIELDS = [
     {"key": "name", "label": "昵称", "type": "text"},
