@@ -18,7 +18,8 @@
             --transition-speed: 0.3s;
         }
         
-        * {
+        /* Transition for interactive elements only */
+        .btn, .card, .nav-link, .form-control, .form-select, .badge, .sidebar .nav-link {
             transition: all var(--transition-speed) ease;
         }
         
@@ -241,12 +242,11 @@
         }
         
         .table tbody tr {
-            transition: all 0.3s ease;
+            transition: background-color 0.3s ease;
         }
         
         .table tbody tr:hover {
             background: rgba(102, 126, 234, 0.05);
-            transform: scale(1.01);
         }
         
         /* Enhanced badges */

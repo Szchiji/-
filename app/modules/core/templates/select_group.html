@@ -27,6 +27,13 @@
         animation-fill-mode: both;
     }
     
+    .group-card:nth-child(1) { animation-delay: 0s; }
+    .group-card:nth-child(2) { animation-delay: 0.1s; }
+    .group-card:nth-child(3) { animation-delay: 0.2s; }
+    .group-card:nth-child(4) { animation-delay: 0.3s; }
+    .group-card:nth-child(5) { animation-delay: 0.4s; }
+    .group-card:nth-child(6) { animation-delay: 0.5s; }
+    
     @keyframes fadeInUp {
         from {
             opacity: 0;
@@ -120,7 +127,7 @@
     
     <div class="row g-4 justify-content-center">
         {% for g in groups %}
-        <div class="col-md-6 col-lg-4" id="card_{{ g.id }}" style="animation-delay: {{ loop.index0 * 0.1 }}s;">
+        <div class="col-md-6 col-lg-4" id="card_{{ g.id }}">
             <div class="group-card card h-100 shadow-sm border-0 {% if not g.is_active %}inactive{% endif %}">
                 <div class="card-body p-4">
                     <div class="text-center mb-4">
