@@ -5,6 +5,7 @@
         <h6 class="m-0 font-weight-bold text-primary">认证用户列表</h6>
         <!-- 搜索框 -->
         <div class="d-flex">
+            <button class="btn btn-success btn-sm me-2" onclick="openAddUser()"><i class="fa-solid fa-plus"></i> 添加用户</button>
             <input id="searchInput" type="text" class="form-control form-control-sm me-2" placeholder="搜索关键字">
             <button class="btn btn-primary btn-sm" onclick="searchUsers()">搜索</button>
         </div>
@@ -29,6 +30,7 @@
                         </td>
                         <td>{{ user.expiration_date }}</td>
                         <td class="text-end pe-4">
+                            <button class="btn btn-sm btn-light text-warning" onclick="pushUser({{ user.id }})" title="推送"><i class="fa-solid fa-bell"></i></button>
                             <button class="btn btn-sm btn-light text-primary" data-id="{{ user.id }}" data-tgid="{{ user.tg_id }}" data-profile='{{ user.profile_data|default('{}')|safe }}' onclick="openEdit(this)" title="编辑"><i class="fa-solid fa-pen"></i></button>
                             <button class="btn btn-sm btn-light text-danger" onclick="delUser({{ user.id }})" title="删除"><i class="fa-solid fa-trash"></i></button>
                         </td>
@@ -65,6 +67,7 @@
                     </td>
                     <td>${user.expiration_date || ""}</td>
                     <td class="text-end pe-4">
+                        <button class="btn btn-sm btn-light text-warning" onclick="pushUser(${user.id})" title="推送"><i class="fa-solid fa-bell"></i></button>
                         <button class="btn btn-sm btn-light text-primary" onclick="editUser(${user.id})" title="编辑"><i class="fa-solid fa-pen"></i></button>
                         <button class="btn btn-sm btn-light text-danger" onclick="deleteUser(${user.id})" title="删除"><i class="fa-solid fa-trash"></i></button>
                     </td>
@@ -73,6 +76,102 @@
         } else {
             alert(data.msg || "搜索失败");
         }
+    }
+</script>
+
+<!-- Add User Modal -->
+<div class="modal fade" id="addUserModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title fw-bold">添加用户</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addUserForm">
+                    <div class="mb-3">
+                        <label class="form-label">TG ID <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="tg_id" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">添加天数</label>
+                        <input type="number" class="form-control" name="add_days" value="30">
+                    </div>
+                    {% for field in fields %}
+                    <div class="mb-3">
+                        <label class="form-label">{{ field.label }}</label>
+                        {% if field.type == 'select' %}
+                        <select class="form-control profile-input" name="{{ field.key }}">
+                            <option value="">请选择</option>
+                            {% for opt in field.options %}
+                            <option value="{{ opt }}">{{ opt }}</option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
+                        <input type="text" class="form-control profile-input" name="{{ field.key }}">
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </form>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitAddUser()">确定</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Open Add User Modal
+    function openAddUser() {
+        const modal = new bootstrap.Modal(document.getElementById('addUserModal'));
+        modal.show();
+    }
+
+    // Submit Add User Form
+    async function submitAddUser() {
+        const form = document.getElementById('addUserForm');
+        const formData = new FormData(form);
+        const data = {
+            group_id: {{ group.id }},
+            tg_id: formData.get('tg_id'),
+            add_days: formData.get('add_days'),
+            profile: {}
+        };
+        
+        // Collect profile data from profile-input fields
+        document.querySelectorAll('.profile-input').forEach(input => {
+            data.profile[input.name] = input.value;
+        });
+
+        const res = await fetch("/core/api/save_user", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data), 
+        });
+        
+        const resData = await res.json();
+        if (resData.status === 'ok') {
+            location.reload();
+        } else {
+            alert(resData.msg || '保存失败');
+        }
+    }
+
+    // Push User
+    function pushUser(id) {
+        if (!confirm('确定要推送用户信息吗？')) return;
+        fetch("/core/api/push_user", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: id }),
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'ok') alert('推送成功');
+            else alert(data.msg || '推送失败');
+        });
     }
 </script>
 {% endblock %}
