@@ -4,107 +4,140 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bot Admin</title>
+    <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
-        :root { --primary-color: #4e73df; --bg-color: #f8f9fc; }
-        body { background-color: var(--bg-color); font-family: 'Segoe UI', Roboto, sans-serif; color: #5a5c69; }
-        
-        /* 侧边栏 */
-        .sidebar { width: 250px; background: white; position: fixed; top: 0; left: 0; height: 100vh; border-right: 1px solid #e3e6f0; z-index: 1000; overflow-y: auto; }
-        .sidebar-brand { height: 70px; display: flex; align-items: center; padding: 0 1.5rem; font-weight: 800; font-size: 1.2rem; color: #4e73df; border-bottom: 1px solid #e3e6f0; text-decoration: none; }
-        .nav-link { color: #5a5c69; padding: 1rem 1.5rem; font-weight: 600; display: flex; align-items: center; text-decoration: none; transition: 0.2s; }
-        .nav-link:hover { background: #f8f9fc; color: #4e73df; }
-        .nav-link.active { color: #4e73df; background: #f0f4ff; border-right: 4px solid #4e73df; }
-        .nav-link i { width: 24px; margin-right: 8px; text-align: center; }
-        
-        /* 主内容 */
-        .main-wrapper { min-height: 100vh; display: flex; flex-direction: column; transition: margin-left 0.2s; }
-        .topbar { height: 70px; background: white; border-bottom: 1px solid #e3e6f0; display: flex; align-items: center; justify-content: space-between; padding: 0 2rem; }
-        .content { padding: 2rem; }
-        
-        @media (max-width: 768px) {
-            .sidebar { display: none; }
-            .main-wrapper { margin-left: 0 !important; }
+        body { background-color: #f3f4f6; font-family: -apple-system, system-ui, "Segoe UI", Helvetica, Arial, sans-serif; }
+        /* 侧边栏样式 */
+        .sidebar {
+            position: fixed; top: 0; bottom: 0; left: 0; z-index: 100;
+            padding: 48px 0 0; box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            background-color: #fff; width: 240px;
         }
+        .sidebar .nav-link {
+            font-weight: 500; color: #333; padding: 12px 24px;
+            display: flex; align-items: center;
+        }
+        .sidebar .nav-link i { width: 24px; text-align: center; margin-right: 8px; color: #6c757d; }
+        .sidebar .nav-link:hover { color: #007bff; background-color: #f8f9fa; }
+        .sidebar .nav-link.active { color: #007bff; background-color: #e7f1ff; }
+        .sidebar .nav-link.active i { color: #007bff; }
+        
+        /* 顶部导航 */
+        .navbar-top {
+            position: fixed; top: 0; right: 0; left: 240px; z-index: 101;
+            height: 56px; background-color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            padding: 0 24px; display: flex; align-items: center; justify-content: space-between;
+        }
+        
+        /* 主内容区 */
+        .main-content {
+            margin-left: 240px; padding: 80px 24px 24px;
+        }
+        
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .sidebar { transform: translateX(-100%); transition: transform 0.3s; }
+            .sidebar.show { transform: translateX(0); }
+            .navbar-top { left: 0; }
+            .main-content { margin-left: 0; }
+            .mobile-toggle { display: block !important; }
+        }
+        .mobile-toggle { display: none; border: none; background: none; font-size: 24px; color: #333; }
+        
+        /* 卡片通用 */
+        .card { border: none; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.04); background: #fff; margin-bottom: 20px; }
+        .card-header { background: transparent; border-bottom: 1px solid #f0f0f0; padding: 16px 20px; font-weight: 600; }
+        .btn-primary { background-color: #007bff; border-color: #007bff; border-radius: 8px; }
     </style>
-    {% block head %}{% endblock %}
+    {% block css %}{% endblock %}
 </head>
 <body>
-    <!-- 气泡提示 -->
-    <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1100;">
-      <div id="liveToast" class="toast align-items-center border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
-        <div class="d-flex">
-          <div class="toast-body fw-bold" id="toastMessage"></div>
-          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-        </div>
-      </div>
-    </div>
 
-    <!-- 判断是否显示侧边栏 -->
-    {% set show_sidebar = (current_group and page not in ['select_group', 'login']) %}
+<!-- 移动端遮罩 -->
+<div id="sidebarOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:99;" onclick="toggleSidebar()"></div>
 
-    {% if show_sidebar %}
-    <nav class="sidebar">
-        <a href="#" class="sidebar-brand"><i class="fa-solid fa-robot me-2"></i> Bot Admin</a>
-        <div class="nav flex-column py-3">
-            <div class="px-4 mb-2 text-xs fw-bold text-muted text-uppercase" style="font-size: 0.75rem;">当前: {{ current_group.title }}</div>
-            <a href="/core/group/{{ current_group.id }}/dashboard" class="nav-link {% if page=='dashboard' %}active{% endif %}"><i class="fa-solid fa-chart-pie"></i> 仪表盘</a>
-            <a href="/core/group/{{ current_group.id }}/users" class="nav-link {% if page=='users' %}active{% endif %}"><i class="fa-solid fa-users"></i> 用户管理</a>
-            <a href="/core/group/{{ current_group.id }}/fields" class="nav-link {% if page=='fields' %}active{% endif %}"><i class="fa-solid fa-list-check"></i> 资料字段</a>
-            <a href="/core/group/{{ current_group.id }}/settings" class="nav-link {% if page=='settings' %}active{% endif %}"><i class="fa-solid fa-sliders"></i> 功能配置</a>
-            <hr class="mx-3 my-3 text-muted opacity-25">
-            <a href="/core/select_group" class="nav-link text-dark"><i class="fa-solid fa-exchange-alt"></i> 切换群组</a>
-            <a href="/core/logout" class="nav-link text-danger"><i class="fa-solid fa-right-from-bracket"></i> 退出登录</a>
-        </div>
-    </nav>
-    {% endif %}
-
-    <div class="main-wrapper" style="margin-left: {{ '250px' if show_sidebar else '0' }};">
-        <header class="topbar">
-            <h5 class="mb-0 fw-bold text-dark">
-                {% if not show_sidebar %}<i class="fa-solid fa-robot me-2 text-primary"></i>Bot Admin{% endif %}
-                {% if page=='dashboard' %}数据概览{% endif %}
-                {% if page=='users' %}用户管理{% endif %}
-                {% if page=='fields' %}字段配置{% endif %}
-                {% if page=='settings' %}功能设置{% endif %}
-            </h5>
-            <div class="d-flex align-items-center">
-                {% if current_group and show_sidebar %}
-                <a href="https://t.me/{{ current_group.username }}" target="_blank" class="btn btn-sm btn-light text-primary me-2"><i class="fa-brands fa-telegram"></i> 打开群组</a>
-                {% endif %}
-                {% if session.get('logged_in') and not show_sidebar %}
-                <a href="/core/logout" class="btn btn-sm btn-outline-danger">退出</a>
-                {% endif %}
-            </div>
-        </header>
-
-        <div class="content">
-            {% block content %}{% endblock %}
-        </div>
+<!-- 侧边栏 -->
+<nav class="sidebar" id="sidebar">
+    <div class="px-4 mb-4 d-flex align-items-center">
+        <i class="fa-brands fa-telegram fa-2x text-primary me-2"></i>
+        <span class="fs-5 fw-bold">Bot Admin</span>
     </div>
     
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script>
-        function showToast(msg, type='success') {
-            const el = document.getElementById('liveToast');
-            document.getElementById('toastMessage').innerText = msg;
-            el.className = 'toast align-items-center border-0 shadow-lg text-white';
-            if(type === 'success') el.classList.add('bg-success');
-            else if(type === 'error') el.classList.add('bg-danger');
-            else el.classList.add('bg-secondary');
-            new bootstrap.Toast(el, { delay: 2500 }).show();
-        }
-        async function postApi(url, data) {
-            try {
-                const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
-                const j = await r.json();
-                if(j.status === 'ok') { showToast(j.msg || '✅ 操作成功', 'success'); setTimeout(() => location.reload(), 1000); } 
-                else { showToast(j.msg || '❌ 操作失败', 'error'); }
-            } catch(e) { showToast('❌ 网络错误', 'error'); }
-        }
-    </script>
-    {% block scripts %}{% endblock %}
+    <div class="nav flex-column">
+        {% if current_group %}
+            <div class="text-uppercase text-muted fw-bold px-4 mb-2 mt-2" style="font-size: 12px;">当前群组: {{ current_group.title[:8] }}...</div>
+            <a class="nav-link {% if page == 'dashboard' %}active{% endif %}" href="/core/group/{{ current_group.id }}/dashboard">
+                <i class="fa-solid fa-chart-pie"></i> 仪表盘
+            </a>
+            <a class="nav-link {% if page == 'users' %}active{% endif %}" href="/core/group/{{ current_group.id }}/users">
+                <i class="fa-solid fa-users"></i> 用户管理
+            </a>
+            <a class="nav-link {% if page == 'fields' %}active{% endif %}" href="/core/group/{{ current_group.id }}/fields">
+                <i class="fa-solid fa-list-check"></i> 资料字段
+            </a>
+            <a class="nav-link {% if page == 'settings' %}active{% endif %}" href="/core/group/{{ current_group.id }}/settings">
+                <i class="fa-solid fa-sliders"></i> 功能配置
+            </a>
+            <hr class="mx-3 my-2">
+        {% endif %}
+        
+        <a class="nav-link text-dark" href="/core/select_group">
+            <i class="fa-solid fa-exchange-alt"></i> 切换群组
+        </a>
+        <a class="nav-link text-danger" href="/core/logout">
+            <i class="fa-solid fa-right-from-bracket"></i> 退出登录
+        </a>
+    </div>
+</nav>
+
+<!-- 顶部栏 -->
+<header class="navbar-top">
+    <button class="mobile-toggle me-3" onclick="toggleSidebar()">
+        <i class="fa-solid fa-bars"></i>
+    </button>
+    <h5 class="mb-0 fw-bold text-truncate">
+        {% if current_group %}{{ current_group.title }}{% else %}控制台{% endif %}
+    </h5>
+    <div>
+        <!-- 右侧预留 -->
+    </div>
+</header>
+
+<!-- 主内容 -->
+<main class="main-content">
+    {% block content %}{% endblock %}
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    function toggleSidebar() {
+        const sb = document.getElementById('sidebar');
+        const ol = document.getElementById('sidebarOverlay');
+        sb.classList.toggle('show');
+        ol.style.display = sb.classList.contains('show') ? 'block' : 'none';
+    }
+    
+    async function postApi(url, data) {
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            const json = await res.json();
+            if (json.status === 'ok') {
+                alert(json.msg || '操作成功');
+                location.reload();
+            } else {
+                alert('错误: ' + (json.msg || '未知错误'));
+            }
+        } catch(e) { alert('网络请求失败'); }
+    }
+</script>
+{% block scripts %}{% endblock %}
 </body>
 </html>
