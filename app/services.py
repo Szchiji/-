@@ -72,7 +72,9 @@ def sanitize_html_for_telegram(text):
         if tag_name == 'span':
             if not is_closing:
                 # Check if it has class="tg-spoiler"
-                if 'class' in attributes and 'tg-spoiler' in attributes:
+                # Use proper regex to extract class attribute value
+                class_match = re.search(r'class\s*=\s*["\']([^"\']*)["\']', attributes, re.IGNORECASE)
+                if class_match and 'tg-spoiler' == class_match.group(1).strip():
                     result_parts.append('<span class="tg-spoiler">')
                     valid_openings.append('span')
                 else:
