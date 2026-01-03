@@ -19,9 +19,8 @@
             .sidebar {
                 position: fixed;
                 top: 0;
-                left: -100%;
-                width: 100%;
-                max-width: 280px;
+                left: -280px;
+                width: 280px;
                 transition: left 0.3s ease-in-out;
                 z-index: 1040;
             }
@@ -51,7 +50,7 @@
     <header class="navbar navbar-dark sticky-top bg-dark flex-md-nowrap p-0 shadow">
         <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Bot Manager</a>
         {% if session.get('logged_in') %}
-        <button class="sidebar-toggle d-md-none" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu" aria-expanded="false" aria-label="Toggle navigation">
+        <button class="sidebar-toggle d-md-none" type="button" onclick="toggleSidebar()" aria-label="Toggle navigation">
             <i class="fas fa-bars"></i>
         </button>
         {% endif %}
@@ -115,6 +114,28 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+        // Responsive sidebar toggle function
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebarMenu');
+            if (sidebar) {
+                sidebar.classList.toggle('show');
+            }
+        }
+        
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', function(event) {
+            const sidebar = document.getElementById('sidebarMenu');
+            const toggle = document.querySelector('.sidebar-toggle');
+            
+            if (sidebar && toggle && window.innerWidth < 768) {
+                if (!sidebar.contains(event.target) && 
+                    !toggle.contains(event.target) && 
+                    sidebar.classList.contains('show')) {
+                    sidebar.classList.remove('show');
+                }
+            }
+        });
+        
         async function postApi(url, data) {
             try {
                 let res = await fetch(url, {
