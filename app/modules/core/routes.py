@@ -357,7 +357,7 @@ async def on_my_chat_member(update: Update, context):
             with global_flask_app.app_context():
                 g = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
                 if not g:
-                    g = BotGroup(chat_id=str(chat.id), title=chat.title, username=chat.username, is_active=True)
+                    g = BotGroup(chat_id=str(chat.id), title=chat.title, type=chat.type, is_active=True)
                     g.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
                     db.session.add(g)
                     db.session.commit()
