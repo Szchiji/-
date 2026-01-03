@@ -13,11 +13,48 @@
         .navbar-brand { padding-top: .75rem; padding-bottom: .75rem; font-size: 1rem; background-color: rgba(0, 0, 0, .25); box-shadow: inset -1px 0 0 rgba(0, 0, 0, .25); }
         .navbar .navbar-toggler { top: .25rem; right: 1rem; }
         main { padding-top: 20px; }
+        
+        /* Responsive sidebar improvements */
+        @media (max-width: 767.98px) {
+            .sidebar {
+                position: fixed;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                max-width: 280px;
+                transition: left 0.3s ease-in-out;
+                z-index: 1040;
+            }
+            .sidebar.show {
+                left: 0;
+            }
+            main {
+                margin-left: 0 !important;
+            }
+        }
+        
+        .sidebar-toggle {
+            border: none;
+            background-color: transparent;
+            color: rgba(255, 255, 255, 0.55);
+            padding: 0.25rem 0.75rem;
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+        
+        .sidebar-toggle:hover {
+            color: rgba(255, 255, 255, 0.75);
+        }
     </style>
 </head>
 <body>
     <header class="navbar navbar-dark sticky-top bg-dark flex-md-nowrap p-0 shadow">
         <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Bot Manager</a>
+        {% if session.get('logged_in') %}
+        <button class="sidebar-toggle d-md-none" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu" aria-expanded="false" aria-label="Toggle navigation">
+            <i class="fas fa-bars"></i>
+        </button>
+        {% endif %}
         <div class="navbar-nav">
             <div class="nav-item text-nowrap">
                 {% if session.get('logged_in') %}
