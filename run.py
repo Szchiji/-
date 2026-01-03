@@ -43,9 +43,9 @@ def start_bot_process_forever():
     # 1. 初始化
     loop.run_until_complete(run_bot())
     
-    # 2. ⚡️ 核心：让 Loop 永远跑下去，活着等待 Flask 的投喂
+    # 2. ⚡ 核心：让 Loop 永远跑下去，活着等待 Flask 的投喂
     print("✅ 机器人循环已启动，正在监听 Webhook 任务...", flush=True)
-    loop.run_forever() 
+    loop.run_forever()
 
 if __name__ == '__main__':
     domain = os.getenv('RAILWAY_PUBLIC_DOMAIN')
