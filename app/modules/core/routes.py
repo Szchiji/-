@@ -251,8 +251,12 @@ def api_search_users():
     fields = get_group_fields(group)
     
     # Search users by keyword in profile_data
+    # Requirement: "所有的查询只显示已经今日打卡的认证用户" (ALL queries should only show users who checked in today)
+    today = get_beijing_today()
     users = GroupUser.query.filter(
         GroupUser.group_id == gid,
+        GroupUser.online == True,
+        GroupUser.checkin_time >= today,
         GroupUser.profile_data.contains(keyword)
     ).order_by(GroupUser.id.desc()).limit(200).all()
     
