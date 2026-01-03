@@ -181,6 +181,9 @@ def api_search_users():
         return jsonify({'status':'error', 'msg':'Missing parameters'})
     
     group = BotGroup.query.get(gid)
+    if not group:
+        return jsonify({'status':'error', 'msg':'Group not found'})
+    
     fields = get_group_fields(group)
     
     # Search users by keyword in profile_data

@@ -145,17 +145,26 @@
             data.profile[input.name] = input.value;
         });
 
-        const res = await fetch("/core/api/save_user", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data), 
-        });
-        
-        const resData = await res.json();
-        if (resData.status === 'ok') {
-            location.reload();
-        } else {
-            alert(resData.msg || '保存失败');
+        try {
+            const res = await fetch("/core/api/save_user", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data), 
+            });
+            
+            if (!res.ok) {
+                throw new Error('Network response was not ok');
+            }
+            
+            const resData = await res.json();
+            if (resData.status === 'ok') {
+                location.reload();
+            } else {
+                alert(resData.msg || '保存失败');
+            }
+        } catch (error) {
+            alert('网络错误或请求失败，请稍后重试');
+            console.error('Error:', error);
         }
     }
 
@@ -167,10 +176,19 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: id }),
         })
-        .then(res => res.json())
+        .then(res => {
+            if (!res.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return res.json();
+        })
         .then(data => {
             if (data.status === 'ok') alert('推送成功');
             else alert(data.msg || '推送失败');
+        })
+        .catch(error => {
+            alert('网络错误或请求失败，请稍后重试');
+            console.error('Error:', error);
         });
     }
 </script>
