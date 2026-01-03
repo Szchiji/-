@@ -46,7 +46,6 @@ def get_group_conf(group):
     if group and group.config:
         try:
             c = json.loads(group.config)
-            # 兼容旧数据结构 {config: {...}}
             if isinstance(c, dict) and 'config' in c: c = c['config']
             for k, v in c.items():
                 if v is not None: conf[k] = v
@@ -83,8 +82,8 @@ def page_users(gid):
     if not session.get('logged_in'): return redirect('/core')
     session['current_group_id'] = gid
     group = BotGroup.query.get_or_404(gid)
-    users = GroupUser.query.filter_by(group_id=gid).order_by(GroupUser.updated_at.desc()).limit(200).all()
-    # ⚡️ 预处理 JSON，避免模板报错
+    # ⚡️ 修复点：将 updated_at 改为 id，防止报错
+    users = GroupUser.query.filter_by(group_id=gid).order_by(GroupUser.id.desc()).limit(200).all()
     for u in users:
         try: u.profile_dict = json.loads(u.profile_data) if u.profile_data else {}
         except: u.profile_dict = {}
@@ -123,7 +122,6 @@ def api_save_fields():
     d = request.json
     group = BotGroup.query.get(session['current_group_id'])
     
-    # ⚡️ 兼容 List 和 Dict 两种格式，防止 500 报错
     fields_data = d.get('fields', d) if isinstance(d, dict) else d
     
     group.fields_config = json.dumps(fields_data, ensure_ascii=False)
@@ -157,7 +155,6 @@ def api_save_user():
     if add != 0:
         base = u.expiration_date or datetime.now()
         u.expiration_date = base + timedelta(days=add)
-        # 解封
         if add > 0 and u.is_banned:
             u.is_banned = False
             try: global_ptb_app.bot.restrict_chat_member(chat_id=BotGroup.query.get(gid).chat_id, user_id=u.tg_id, permissions=ChatPermissions.all_permissions())
@@ -186,7 +183,6 @@ def api_push_user():
         
         if not cid: return jsonify({'status':'error','msg':'请先在功能配置中填写推送频道ID'})
         
-        # 渲染模板
         tpl = conf.get('push_template', '用户: {tg_id}')
         text = tpl.replace('{tg_id}', str(user.tg_id)).replace('{onlineEmoji}', '🟢' if user.online else '🔴').replace('{序号}', str(user.id))
         
@@ -242,14 +238,13 @@ async def run_bot():
 
     app.add_handler(ChatMemberHandler(on_my_chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
-    app.add_handler(CallbackQueryHandler(pagination_callback)) # 翻页
+    app.add_handler(CallbackQueryHandler(pagination_callback)) 
     app.add_handler(CommandHandler("start", cmd_start))
     
     await app.initialize()
     await app.start()
     print("✅ Bot 初始化完成 (Webhook 模式)", flush=True)
 
-# 独立点赞函数
 def do_like(chat_id, message_id, emoji):
     token = os.getenv('TG_BOT_TOKEN')
     if not token or not emoji: return
@@ -263,7 +258,6 @@ def do_like(chat_id, message_id, emoji):
     except Exception as e: print(f"❌ [Like] 请求异常: {e}", flush=True)
 
 async def cmd_start(update: Update, context):
-    """管理员获取后台链接"""
     user_id = update.effective_user.id
     admin_id = safe_int(os.getenv('ADMIN_ID', 0))
     if user_id == admin_id:
@@ -282,7 +276,7 @@ async def on_my_chat_member(update: Update, context):
             g = BotGroup.query.filter_by(chat_id=str(chat.id)).first()
             if not g:
                 g = BotGroup(chat_id=str(chat.id), title=chat.title, username=chat.username, is_active=True)
-                g.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False) # 初始化默认字段
+                g.fields_config = json.dumps(DEFAULT_FIELDS, ensure_ascii=False)
                 db.session.add(g)
                 db.session.commit()
                 print(f"➕ 新群组注册: {chat.title}")
@@ -307,9 +301,7 @@ async def on_message(update: Update, context):
         if group:
             conf = get_group_conf(group)
             if conf.get('auto_like'):
-                # 判断是否认证用户
                 db_user = GroupUser.query.filter_by(group_id=group.id, tg_id=user.id).first()
-                # 如果资料不为空，或者 simply 只要在库里就算认证
                 if db_user:
                      emoji = conf.get('like_emoji', '❤️')
                      do_like(chat.id, msg.message_id, emoji)
@@ -341,13 +333,11 @@ async def on_message(update: Update, context):
         if conf.get('query_open') and txt in query_cmds:
             is_search = True
         elif conf.get('query_filter_open'):
-            # 关键词前缀匹配，例如 "查询 深圳"
             for cmd in query_cmds:
                 if txt.startswith(cmd + " "):
                     kw = txt[len(cmd):].strip()
                     is_search = True
                     break
-            # 或者直接匹配 (如果不带斜杠且长度合适)
             if not is_search and 0 < len(txt) < 15 and not txt.startswith('/'):
                 kw = txt
                 is_search = True
@@ -355,7 +345,6 @@ async def on_message(update: Update, context):
         if is_search:
             fields = get_group_fields(group)
             text_resp, markup, users = await do_query_page(chat.id, group.id, conf, fields, kw, 1)
-            # 如果有结果，或者是在明确查全部
             if users or (not kw and not users):
                 if not text_resp: text_resp = "😢 暂无数据"
                 sent = await msg.reply_html(text_resp, reply_markup=markup, disable_web_page_preview=True)
@@ -370,21 +359,19 @@ async def on_message(update: Update, context):
 async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
     from app import create_app
     with create_app().app_context():
-        # 这里定义查询逻辑
-        # 默认查今日已打卡的
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         base = GroupUser.query.filter(GroupUser.group_id == group_id, GroupUser.online == True)
         
-        # 如果是搜关键词，就不限“今日”，而是搜全部库
         if kw:
-            base = GroupUser.query.filter(GroupUser.group_id == group_id) # 重置base
+            base = GroupUser.query.filter(GroupUser.group_id == group_id)
             base = base.filter(GroupUser.profile_data.contains(kw))
             header = conf.get('msg_filter_header', '🔍 <b>筛选结果：</b>')
         else:
             base = base.filter(GroupUser.checkin_time >= today)
             header = conf.get('msg_query_header', '🔍 <b>今日在线：</b>')
             
-        users = base.order_by(GroupUser.checkin_time.desc()).all()
+        # ⚡️ 修复点：确保排序不报错
+        users = base.order_by(GroupUser.id.desc()).all()
         if not users: return None, None, None
         
         page_size = safe_int(conf.get('page_size'), 10)
@@ -392,7 +379,6 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
         if page > total_pages: page = total_pages
         if page < 1: page = 1
         
-        # 构建文本
         start = (page - 1) * page_size
         current_users = users[start:start+page_size]
         
@@ -406,12 +392,11 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
                 for k, lbl in f_map.items(): l = l.replace(f"{{{lbl}}}", str(d.get(k,'')))
                 l = l.replace("{序号}", str(start + idx + 1))
                 l = l.replace("{tg_id}", str(u.tg_id))
-                lines.append(re.sub(r'\{.*?\}', '', l)) # 清理未匹配的标签
+                lines.append(re.sub(r'\{.*?\}', '', l))
             except: continue
             
         text = header + "\n\n" + "\n".join(lines)
         
-        # 构建按钮
         buttons = []
         nav_row = []
         safe_kw = kw if kw else "None"
@@ -438,13 +423,11 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
 async def pagination_callback(update: Update, context):
     query = update.callback_query
     if query.data == "noop": return await query.answer()
-    
     try:
         parts = query.data.split('|')
         page = int(parts[1])
         kw = parts[2] if parts[2] != "None" else None
         
-        # 获取群组信息 (复用之前的 safe logic)
         chat = update.effective_chat
         from app import create_app
         with create_app().app_context():
@@ -459,5 +442,4 @@ async def pagination_callback(update: Update, context):
                 await query.edit_message_text(text=text, parse_mode='HTML', reply_markup=markup, disable_web_page_preview=True)
     except Exception as e: 
         print(f"Page Error: {e}")
-    
     await query.answer()
