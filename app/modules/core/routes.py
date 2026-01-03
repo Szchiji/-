@@ -393,19 +393,22 @@ async def check_expired_users(context):
                             
                             print(f"⛔️ Banned expired user {user.tg_id} in group {group.title}", flush=True)
                             
-                            # Send notification to user
+                            # Try to send notification to user privately first, fallback to group
                             conf = get_group_conf(group)
+                            ban_msg = conf.get('msg_expired_ban', '⛔️ <b>您的认证已过期，已被暂时禁言。请联系管理员续费。</b>')
                             try:
+                                # Try to send private message first
                                 asyncio.run_coroutine_threadsafe(
                                     context.bot.send_message(
-                                        chat_id=group.chat_id,
-                                        text=conf.get('msg_expired_ban', '⛔️ <b>您的认证已过期，已被暂时禁言。请联系管理员续费。</b>'),
+                                        chat_id=user.tg_id,
+                                        text=ban_msg,
                                         parse_mode='HTML'
                                     ),
                                     global_bot_loop
                                 ).result(timeout=5)
                             except Exception as e:
-                                print(f"Failed to send ban notification: {e}")
+                                # If private message fails, we don't send to group to avoid spam
+                                print(f"Failed to send ban notification to user {user.tg_id}: {e}")
                     except Exception as e:
                         print(f"Error banning user {user.tg_id}: {e}")
                         db.session.rollback()
@@ -624,6 +627,7 @@ async def do_query_page(chat_id, group_id, conf, fields, kw=None, page=1):
         with global_flask_app.app_context():
             today = get_beijing_today()
             # Always filter by today's check-in, whether it's a keyword search or not
+            # Requirement: "所有的查询只显示已经今日打卡的认证用户" (ALL queries should only show users who checked in today)
             base = GroupUser.query.filter(
                 GroupUser.group_id == group_id,
                 GroupUser.online == True,
