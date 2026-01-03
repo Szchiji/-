@@ -291,7 +291,27 @@ async def run_bot(app_instance):
     
     await app.initialize()
     await app.start()
-    print("✅ Bot 初始化完成 (Webhook 模式)", flush=True)
+    
+    # 根据环境变量自动判断运行模式
+    domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').strip()
+    if domain:
+        # Webhook 模式：注册 Webhook 地址到 Telegram
+        webhook_url = f"https://{domain}/core/webhook"
+        try:
+            await app.bot.set_webhook(url=webhook_url)
+            print(f"✅ Bot 初始化完成 (Webhook 模式)，Webhook URL: {webhook_url}", flush=True)
+        except Exception as e:
+            print(f"❌ Webhook 设置失败: {e}", flush=True)
+            raise
+    else:
+        # Polling 模式：开始轮询拉取消息
+        print("✅ Bot 初始化完成 (Polling 模式)，开始轮询...", flush=True)
+        try:
+            await app.updater.start_polling(drop_pending_updates=True)
+            print("✅ Polling 已启动", flush=True)
+        except Exception as e:
+            print(f"❌ Polling 启动失败: {e}", flush=True)
+            raise
 
 def do_like(chat_id, message_id, emoji):
     token = os.getenv('TG_BOT_TOKEN')
