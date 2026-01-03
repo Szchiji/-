@@ -14,6 +14,10 @@ global_ptb_app = None
 global_bot_loop = None
 global_flask_app = None  # 🆕 新增：持有 Flask App 实例
 
+# Constants
+EXPIRATION_CHECK_INTERVAL = 3600  # Check expired users every hour (in seconds)
+JWT_TOKEN_EXPIRY_DAYS = 7  # JWT token validity for group access (in days)
+
 # Beijing timezone
 BEIJING_TZ = pytz.timezone('Asia/Shanghai')
 
@@ -369,7 +373,11 @@ async def check_expired_users(context):
             try:
                 now = get_beijing_now()
                 # Find all users whose expiration date has passed and are not yet banned
-                expired_users = GroupUser.query.filter(
+                # Using join to avoid N+1 query problem
+                from sqlalchemy.orm import joinedload
+                expired_users = GroupUser.query.options(
+                    joinedload(GroupUser.group)
+                ).filter(
                     GroupUser.expiration_date.isnot(None),
                     GroupUser.expiration_date < now,
                     GroupUser.is_banned == False
@@ -378,9 +386,11 @@ async def check_expired_users(context):
                 if expired_users:
                     print(f"🔍 Found {len(expired_users)} expired users to ban", flush=True)
                 
+                # Batch process users and commit once at the end
+                banned_users = []
                 for user in expired_users:
                     try:
-                        group = BotGroup.query.get(user.group_id)
+                        group = user.group if hasattr(user, 'group') else BotGroup.query.get(user.group_id)
                         if group and group.is_active:
                             # Ban the user in the group
                             asyncio.run_coroutine_threadsafe(
@@ -393,31 +403,37 @@ async def check_expired_users(context):
                             ).result(timeout=5)
                             
                             user.is_banned = True
-                            db.session.commit()
+                            banned_users.append((user, group))
                             
                             print(f"⛔️ Banned expired user {user.tg_id} in group {group.title}", flush=True)
-                            
-                            # Try to send notification to user privately first, fallback to group
-                            conf = get_group_conf(group)
-                            ban_msg = conf.get('msg_expired_ban', '⛔️ <b>您的认证已过期，已被暂时禁言。请联系管理员续费。</b>')
-                            try:
-                                # Try to send private message first
-                                asyncio.run_coroutine_threadsafe(
-                                    context.bot.send_message(
-                                        chat_id=user.tg_id,
-                                        text=ban_msg,
-                                        parse_mode='HTML'
-                                    ),
-                                    global_bot_loop
-                                ).result(timeout=5)
-                            except Exception as e:
-                                # If private message fails, we don't send to group to avoid spam
-                                print(f"Failed to send ban notification to user {user.tg_id}: {e}")
                     except Exception as e:
                         print(f"Error banning user {user.tg_id}: {e}")
-                        db.session.rollback()
+                
+                # Commit all changes at once
+                if banned_users:
+                    db.session.commit()
+                    
+                    # Send notifications after successful commit
+                    for user, group in banned_users:
+                        try:
+                            conf = get_group_conf(group)
+                            ban_msg = conf.get('msg_expired_ban', '⛔️ <b>您的认证已过期，已被暂时禁言。请联系管理员续费。</b>')
+                            # Try to send private message
+                            asyncio.run_coroutine_threadsafe(
+                                context.bot.send_message(
+                                    chat_id=user.tg_id,
+                                    text=ban_msg,
+                                    parse_mode='HTML'
+                                ),
+                                global_bot_loop
+                            ).result(timeout=5)
+                        except Exception as e:
+                            # If private message fails, we don't send to group to avoid spam
+                            print(f"Failed to send ban notification to user {user.tg_id}: {e}")
+                            
             except Exception as e:
                 print(f"Error in check_expired_users: {e}")
+                db.session.rollback()
     
     # Run in executor to avoid blocking
     await asyncio.get_running_loop().run_in_executor(None, _sync_check)
@@ -447,7 +463,7 @@ async def run_bot(app_instance):
     app.add_handler(CommandHandler("start", cmd_start))
     
     # Add periodic job to check expired users
-    app.job_queue.run_repeating(check_expired_users, interval=3600, first=10)  # Run every hour
+    app.job_queue.run_repeating(check_expired_users, interval=EXPIRATION_CHECK_INTERVAL, first=10)
     
     await app.initialize()
     await app.start()
@@ -516,7 +532,7 @@ async def on_my_chat_member(update: Update, context):
                 # Check if user is admin in the group
                 is_admin = await is_user_admin_in_group(context.bot, chat.id, user.id)
                 if is_admin:
-                    token = jwt.encode({'uid': user.id, 'chat_id': chat.id, 'exp': time.time()+86400*7}, os.getenv('SECRET_KEY', 'secret'), algorithm='HS256')
+                    token = jwt.encode({'uid': user.id, 'chat_id': chat.id, 'exp': time.time() + 86400 * JWT_TOKEN_EXPIRY_DAYS}, os.getenv('SECRET_KEY', 'secret'), algorithm='HS256')
                     url = f"https://{domain}/core/magic_login?token={token}"
                     try: 
                         await context.bot.send_message(chat.id, f"✅ 机器人已激活！\n\n👉 [点击进入后台管理]({url})\n\n⚠️ 注意：仅群组管理员可访问后台", parse_mode='Markdown')

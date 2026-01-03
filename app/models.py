@@ -25,6 +25,9 @@ class GroupUser(db.Model):
     checkin_time = db.Column(db.DateTime)
     online = db.Column(db.Boolean, default=False)
     __table_args__ = (db.UniqueConstraint('group_id', 'tg_id', name='_group_user_uc'),)
+    
+    # Relationship to BotGroup for efficient querying
+    group = db.relationship('BotGroup', backref='users', lazy=True)
 
 DEFAULT_FIELDS = [
     {"key": "name", "label": "昵称", "type": "text"},
