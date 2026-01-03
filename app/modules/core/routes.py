@@ -325,7 +325,7 @@ def api_push_user():
 def magic_login():
     token = request.args.get('token')
     try:
-        data = jwt.decode(token, os.getenv('SECRET_KEY', 'secret'), algorithms=['HS256'])
+        data = jwt.decode(token, os.getenv('SECRET_KEY', 'default_secret_key'), algorithms=['HS256'])
         user_id = data.get('uid')
         chat_id = data.get('chat_id')
         
@@ -524,7 +524,7 @@ async def cmd_start(update: Update, context):
     user_id = update.effective_user.id
     admin_id = safe_int(os.getenv('ADMIN_ID', 0))
     if user_id == admin_id:
-        token = jwt.encode({'uid': user_id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY', 'secret'), algorithm='HS256')
+        token = jwt.encode({'uid': user_id, 'exp': time.time()+3600}, os.getenv('SECRET_KEY', 'default_secret_key'), algorithm='HS256')
         domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').rstrip('/')
         url = f"https://{domain}/core/magic_login?token={token}" if domain else f"/core/magic_login?token={token}"
         await update.message.reply_html(f"💼 <b>后台入口：</b>\n<a href='{url}'>点击管理</a>")
@@ -553,7 +553,7 @@ async def on_my_chat_member(update: Update, context):
                 # Check if user is admin in the group
                 is_admin = await is_user_admin_in_group(context.bot, chat.id, user.id)
                 if is_admin:
-                    token = jwt.encode({'uid': user.id, 'chat_id': chat.id, 'exp': time.time() + 86400 * JWT_TOKEN_EXPIRY_DAYS}, os.getenv('SECRET_KEY', 'secret'), algorithm='HS256')
+                    token = jwt.encode({'uid': user.id, 'chat_id': chat.id, 'exp': time.time() + 86400 * JWT_TOKEN_EXPIRY_DAYS}, os.getenv('SECRET_KEY', 'default_secret_key'), algorithm='HS256')
                     url = f"https://{domain}/core/magic_login?token={token}"
                     try: 
                         await context.bot.send_message(chat.id, f"✅ 机器人已激活！\n\n👉 [点击进入后台管理]({url})\n\n⚠️ 注意：仅群组管理员可访问后台", parse_mode='Markdown')
